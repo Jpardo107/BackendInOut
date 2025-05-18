@@ -1,5 +1,5 @@
 asgiref==3.8.1
-dj-config-url==1.0.0
+dj-config-url==0.1.1
 Django==5.2
 django-cors-headers==4.7.0
 djangorestframework==3.16.0
