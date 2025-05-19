@@ -171,7 +171,7 @@ SWAGGER_SETTINGS = {
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=6),  # ⬅️ Aquí defines cuánto dura el access token
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),  # ⬅️ Aquí defines cuánto dura el access token
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # ⬅️ (Opcional) Cuánto dura el refresh token
     'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': False,
