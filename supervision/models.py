@@ -2,7 +2,14 @@ from django.db import models
 from user.models import Usuario
 from instalacion.models import Instalacion
 
+
 class Supervision(models.Model):
+    ESTADO_SOLICITUD_CHOICES = [
+        ('pendiente', 'Pendiente'),  # Valor por defecto al crear
+        ('gestionado', 'Gestionado'),
+        ('entregado', 'Entregado'),
+        ('denegado', 'Denegado'),
+    ]
     instalacion = models.ForeignKey(Instalacion, on_delete=models.CASCADE, related_name='supervisiones')
     supervisor = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, related_name='supervisiones')
     fecha = models.DateField()
@@ -12,6 +19,12 @@ class Supervision(models.Model):
     solicitudes = models.TextField(blank=True, null=True)
     latitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    estado_solicitud = models.CharField(
+        max_length=20,
+        choices=ESTADO_SOLICITUD_CHOICES,
+        default='pendiente',  # Valor predeterminado
+    )
+
 
     def __str__(self):
         supervisor_nombre = f"{self.supervisor.nombres} {self.supervisor.apellidos}" if self.supervisor else "Sin supervisor"

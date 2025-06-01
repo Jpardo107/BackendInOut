@@ -1,4 +1,4 @@
-#supervision/serializers.py
+# supervision/serializers.py
 from rest_framework import serializers
 from .models import Supervision, FotoSupervision
 from cargo_fijo.models import EstadoCargoFijo
@@ -14,9 +14,20 @@ class FotoSupervisionSerializer(serializers.ModelSerializer):
 
 class SupervisionSerializer(serializers.ModelSerializer):
     fotos = FotoSupervisionSerializer(many=True, read_only=True)
+
     class Meta:
         model = Supervision
         fields = '__all__'
+
+    # Validar el campo estado_solicitud
+    def validate_estado_solicitud(self, value):
+        # Valores permitidos al actualizar
+        allowed_states = ['gestionado', 'entregado', 'denegado']
+        if self.instance and value not in allowed_states:
+            raise serializers.ValidationError(
+                f"Estado no permitido. Los valores permitidos son: {', '.join(allowed_states)}"
+            )
+        return value
 
 
 class EstadoCargoFijoSerializer(serializers.ModelSerializer):
@@ -27,6 +38,7 @@ class EstadoCargoFijoSerializer(serializers.ModelSerializer):
         fields = ['cargo_fijo_nombre', 'cantidad_revisada', 'estado']
         ref_name = "EstadoCargoFijoDetalle"
 
+
 class EstadoDocumentacionSerializer(serializers.ModelSerializer):
     documento_nombre = serializers.CharField(source='documento.nombre')
 
@@ -34,6 +46,7 @@ class EstadoDocumentacionSerializer(serializers.ModelSerializer):
         model = EstadoDocumentacion
         fields = ['documento_nombre', 'cantidad_revisada', 'validez']
         ref_name = "EstadoDocumentacionDetalle"
+
 
 class SupervisionDetailSerializer(serializers.ModelSerializer):
     instalacion_nombre = serializers.CharField(source='instalacion.nombre')
@@ -62,9 +75,9 @@ class SupervisionDetailSerializer(serializers.ModelSerializer):
             'solicitudes',
             'estado_cargos_fijos',
             'estado_documentos',
-            'fotos'
+            'fotos',
+            'estado_solicitud',
         ]
 
     def get_supervisor_nombre(self, obj):
         return f"{obj.supervisor.nombres} {obj.supervisor.apellidos}" if obj.supervisor else None
-
