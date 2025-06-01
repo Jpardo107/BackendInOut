@@ -19,6 +19,19 @@ class SupervisionSerializer(serializers.ModelSerializer):
         model = Supervision
         fields = '__all__'
 
+    extra_kwargs = {
+        # Hacemos que los campos no sean obligatorios al realizar actualizaciones parciales (PATCH)
+        'fecha': {'required': False},
+        'hora_inicio': {'required': False},
+        'hora_final': {'required': False},
+        'instalacion': {'required': False},
+        'supervisor': {'required': False},
+        'novedades': {'required': False, 'allow_null': True},
+        'solicitudes': {'required': False, 'allow_null': True},
+        'latitud': {'required': False, 'allow_null': True},
+        'longitud': {'required': False, 'allow_null': True},
+    }
+
     # Validar el campo estado_solicitud
     def validate_estado_solicitud(self, value):
         # Valores permitidos al actualizar
