@@ -23,7 +23,7 @@ class SupervisionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         # Validamos que el 'estado_solicitud' tenga un valor permitido
-        allowed_states = ['gestionado', 'entregado', 'denegado']
+        allowed_states = ['gestionado', 'entregado', 'denegado', 'pendiente']
         if data['estado_solicitud'] not in allowed_states:
             return Response(
                 {"estado_solicitud": f"Estado no válido. Los valores permitidos son: {', '.join(allowed_states)}."},

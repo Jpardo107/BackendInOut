@@ -35,7 +35,7 @@ class SupervisionSerializer(serializers.ModelSerializer):
     # Validar el campo estado_solicitud
     def validate_estado_solicitud(self, value):
         # Valores permitidos al actualizar
-        allowed_states = ['gestionado', 'entregado', 'denegado']
+        allowed_states = ['gestionado', 'entregado', 'denegado', 'pendiente']
         if self.instance and value not in allowed_states:
             raise serializers.ValidationError(
                 f"Estado no permitido. Los valores permitidos son: {', '.join(allowed_states)}"
