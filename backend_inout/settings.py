@@ -11,7 +11,10 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+from dotenv import load_dotenv
 import os
+
+load_dotenv()
 import dj_database_url  # Asegúrate de instalar "dj-database-url"
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -104,11 +107,25 @@ WSGI_APPLICATION = 'backend_inout.wsgi.application'
 #     }
 # }
 
-DATABASES = {
-    'default': dj_database_url.config(
-        default=os.environ.get('DATABASE_URL')
-    )
-}
+DATABASES = os.environ.get('DATABASE_URL')
+
+if DATABASES:
+    import dj_database_url
+    DATABASES = {"default": dj_database_url.parse(DATABASES)}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
+
+
+#Variables de entorno R2
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
+R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
+R2_ENDPOINT_URL = os.getenv("R2_ENDPOINT_URL")
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
