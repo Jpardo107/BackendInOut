@@ -36,6 +36,20 @@ class DocumentoInstalacion(models.Model):
         ("confidencial", "Confidencial"),
     )
 
+    ESTADO_DIRECTIVA_CHOICES = (
+        ("sin_tramitar", "Sin tramitar"),
+        ("tramitada", "Tramitada"),
+        ("aprobada", "Aprobada"),
+    )
+
+    estado_directiva = models.CharField(
+        max_length=20,
+        choices=ESTADO_DIRECTIVA_CHOICES,
+        default="sin_tramitar",
+        blank=True,
+    )
+
+
     instalacion = models.ForeignKey(
         Instalacion,
         on_delete=models.CASCADE,

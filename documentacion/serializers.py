@@ -22,6 +22,7 @@ class DocumentoInstalacionSerializer(serializers.ModelSerializer):
             "titulo",
             "categoria",
             "clasificacion",
+            "estado_directiva",
             "nombre_original",
             "mime_type",
             "size",
@@ -38,4 +39,9 @@ class DocumentoInstalacionUploadSerializer(serializers.Serializer):
         choices=[("interno", "interno"), ("confidencial", "confidencial")],
         required=False,
         default="confidencial",
+    )
+    estado_directiva = serializers.ChoiceField(  # ✅ nuevo
+        choices=["sin_tramitar", "tramitada", "aprobada"],
+        required=False,
+        default="sin_tramitar",
     )

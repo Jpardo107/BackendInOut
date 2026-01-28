@@ -47,6 +47,7 @@ class EstadoDocumentacionCreateAPIView(generics.CreateAPIView):
 def documentos_por_instalacion(request, instalacion_id: int):
     instalacion = get_object_or_404(Instalacion, id=instalacion_id)
 
+
     if not user_can_access_instalacion(request.user, instalacion):
         return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
@@ -62,6 +63,7 @@ def documentos_por_instalacion(request, instalacion_id: int):
     titulo = serializer.validated_data["titulo"]
     categoria = serializer.validated_data.get("categoria", "")
     clasificacion = serializer.validated_data.get("clasificacion", "confidencial")
+    estado_directiva = serializer.validated_data.get("estado_directiva", "sin_tramitar")
 
     key = documento_upload_key(instalacion.id, getattr(file, "name", ""))
 
@@ -73,6 +75,7 @@ def documentos_por_instalacion(request, instalacion_id: int):
         titulo=titulo,
         categoria=categoria,
         clasificacion=clasificacion,
+        estado_directiva=estado_directiva,
         storage_key=key,
         nombre_original=getattr(file, "name", "") or "",
         mime_type=getattr(file, "content_type", "") or "",
