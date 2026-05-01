@@ -7,6 +7,13 @@ class Instalacion(models.Model):
         ('sur', 'Sur'),
         ('tw', 'Tw'),
     ]
+    ESTADO_DIRECTIVA_CHOICES = [
+        ("no_existe", "No existe"),
+        ("vencida", "Vencida"),
+        ("tramitada", "Tramitada"),
+        ("rechazada", "Rechazada"),
+        ("aprobada", "Aprobada"),
+    ]
     nombre = models.CharField(max_length=255)
     direccion = models.CharField(max_length=255)
     comuna = models.CharField(max_length=100)
@@ -14,6 +21,11 @@ class Instalacion(models.Model):
     correo_contacto = models.EmailField()
     telefono_contacto = models.CharField(max_length=20)
     zona = models.CharField(max_length=10, choices=ZONAS_CHOICES, default='centro')  # ✨ nuevo campo
+    estado_directiva = models.CharField(
+        max_length=20,
+        choices=ESTADO_DIRECTIVA_CHOICES,
+        default="no_existe",
+    )
 
     def __str__(self):
         return self.nombre

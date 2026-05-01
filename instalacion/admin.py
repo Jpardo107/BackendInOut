@@ -3,5 +3,6 @@ from .models import Instalacion
 
 @admin.register(Instalacion)
 class InstalacionAdmin(admin.ModelAdmin):
-    list_display = ('id', 'nombre', 'comuna', 'nombre_contacto', 'correo_contacto', 'telefono_contacto', 'zona')
+    list_display = ('id', 'nombre', 'comuna', 'nombre_contacto', 'correo_contacto', 'telefono_contacto', 'zona', 'estado_directiva')
+    list_filter = ('zona', 'estado_directiva')
     search_fields = ('nombre', 'comuna', 'nombre_contacto')
