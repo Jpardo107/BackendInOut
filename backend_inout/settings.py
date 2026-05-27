@@ -47,7 +47,8 @@ INSTALLED_APPS = [
     'supervision',
     'instalacion',
     'documentacion',
-    'cargo_fijo'
+    'cargo_fijo',
+    'reportes',
 ]
 
 REST_FRAMEWORK = {
@@ -126,6 +127,12 @@ R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME")
 R2_ENDPOINT_URL = os.getenv("R2_ENDPOINT_URL")
+
+# Variables de entorno OpenAI / reportes
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL")
+REPORTES_IMAGE_MAX_SIZE = int(os.getenv("REPORTES_IMAGE_MAX_SIZE", 10 * 1024 * 1024))
+REPORTES_IMPORT_MAX_SIZE = int(os.getenv("REPORTES_IMPORT_MAX_SIZE", 20 * 1024 * 1024))
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

@@ -35,6 +35,11 @@ def download_document_to_path(key: str, path: str):
     with open(path, "wb") as file:
         client.download_fileobj(settings.R2_BUCKET_NAME, key, file)
 
+def download_document_to_fileobj(key: str, fileobj):
+    client = get_r2_client()
+
+    client.download_fileobj(settings.R2_BUCKET_NAME, key, fileobj)
+
 def delete_document(key: str):
     client = get_r2_client()
 

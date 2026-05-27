@@ -11,6 +11,10 @@ router.register(r'estado-documentacion', EstadoDocumentacionViewSet)
 urlpatterns = [
     path('', include(router.urls)),
     path('masivo/', EstadoDocumentacionCreateAPIView.as_view(), name='estado-documentacion-masivo'),
+    path(
+        "instalaciones/<int:instalacion_id>/documentos/zip/",
+        views.documentos_instalacion_zip,
+    ),
     path("instalaciones/<int:instalacion_id>/documentos/", views.documentos_por_instalacion),
     path(
         "instalaciones/<int:instalacion_id>/documentos/<int:documento_id>/replace/",

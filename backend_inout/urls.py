@@ -50,6 +50,7 @@ urlpatterns = [
     path('api/cargo-fijo/', include('cargo_fijo.urls')),
     path('api/documentacion/', include('documentacion.urls')),
     path('api/supervision/', include('supervision.urls')),
+    path('api/', include('reportes.urls')),
     path('', include('instalacion.urls')),
     path('api/', include('user.urls')),
 ]

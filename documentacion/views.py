@@ -1,9 +1,13 @@
 # documentacion/views.py
+import io
+import logging
 import os
 import shutil
 import subprocess
 import tempfile
+import zipfile
 
+from django.http import HttpResponse
 from rest_framework import viewsets, generics, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -19,9 +23,13 @@ from .services.r2_storage import (
     upload_document,
     upload_file_path,
     download_document_to_path,
+    download_document_to_fileobj,
     delete_document,
     generate_signed_url,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def user_can_access_instalacion(user, instalacion: Instalacion) -> bool:
@@ -43,6 +51,39 @@ def documento_download_filename(doc: DocumentoInstalacion) -> str:
     base = f"{doc.titulo} - {doc.instalacion.nombre}".strip()
     safe = "".join(char for char in base if char not in '\\/:*?"<>|').strip()
     return f"{safe or 'documento'}{ext}"
+
+
+def sanitize_download_name(value: str, fallback: str = "documento") -> str:
+    safe = "".join(char for char in str(value or "") if char not in '\\/:*?"<>|')
+    safe = " ".join(safe.split()).strip().strip(".")
+    return safe or fallback
+
+
+def documento_zip_filename(doc: DocumentoInstalacion) -> str:
+    if doc.nombre_original:
+        raw_name = os.path.basename(doc.nombre_original.replace("\\", "/"))
+        base, ext = os.path.splitext(raw_name)
+        return f"{sanitize_download_name(base, f'documento_{doc.id}')}{ext.lower()}"
+
+    ext = documento_extension(doc)
+    parts = [doc.titulo, doc.categoria, f"documento_{doc.id}"]
+    base = " - ".join(part for part in parts if part)
+    return f"{sanitize_download_name(base, f'documento_{doc.id}')}{ext}"
+
+
+def unique_zip_name(filename: str, used_names: set[str]) -> str:
+    if filename not in used_names:
+        used_names.add(filename)
+        return filename
+
+    base, ext = os.path.splitext(filename)
+    counter = 2
+    while True:
+        candidate = f"{base} ({counter}){ext}"
+        if candidate not in used_names:
+            used_names.add(candidate)
+            return candidate
+        counter += 1
 
 
 def documento_preview_pdf_filename(doc: DocumentoInstalacion) -> str:
@@ -165,6 +206,64 @@ def documentos_por_instalacion(request, instalacion_id: int):
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def documentos_instalacion_zip(request, instalacion_id: int):
+    instalacion = get_object_or_404(Instalacion, id=instalacion_id)
+
+    if not user_can_access_instalacion(request.user, instalacion):
+        return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+    documentos = list(
+        DocumentoInstalacion.objects.filter(instalacion=instalacion).order_by("created_at", "id")
+    )
+    if not documentos:
+        return Response(
+            {"detail": "La instalación no tiene documentos para descargar."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    zip_buffer = io.BytesIO()
+    used_names = set()
+    added_count = 0
+    failed_count = 0
+
+    with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        for doc in documentos:
+            try:
+                file_buffer = io.BytesIO()
+                download_document_to_fileobj(doc.storage_key, file_buffer)
+                file_buffer.seek(0)
+                zip_file.writestr(
+                    unique_zip_name(documento_zip_filename(doc), used_names),
+                    file_buffer.read(),
+                )
+                added_count += 1
+            except Exception:
+                failed_count += 1
+                logger.exception(
+                    "No se pudo agregar el documento %s de la instalación %s al ZIP.",
+                    doc.id,
+                    instalacion.id,
+                )
+
+    if added_count == 0:
+        return Response(
+            {
+                "detail": "No se pudo descargar ningún archivo de la instalación desde el storage.",
+            },
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    zip_buffer.seek(0)
+    zip_filename = f"Documentacion_{sanitize_download_name(instalacion.nombre, f'instalacion_{instalacion.id}')}.zip"
+    response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="{zip_filename}"'
+    if failed_count:
+        response["X-Skipped-Documents"] = str(failed_count)
+    return response
 
 
 @api_view(["PUT"])
