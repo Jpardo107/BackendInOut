@@ -1,3 +1,4 @@
+import logging
 import os
 
 from django.conf import settings
@@ -34,6 +35,9 @@ STANDARD_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 HEIC_IMAGE_EXTENSIONS = {".heic", ".heif"}
 ALLOWED_IMAGE_EXTENSIONS = STANDARD_IMAGE_EXTENSIONS | HEIC_IMAGE_EXTENSIONS
 ALLOWED_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+
+
+logger = logging.getLogger(__name__)
 
 
 def user_can_access_instalacion(user, instalacion) -> bool:
@@ -95,7 +99,7 @@ def _normalize_payload(request):
     normalized = {
         "tipo_reporte": _first(data, "tipo_reporte", "tipoReporte"),
         "instalacion": _normalize_instalacion(
-            _first(data, "instalacion", "instalacionSeleccionada")
+            _first(data, "instalacion", "instalacionId", "instalacionSeleccionada")
         ),
         "zona": _first(data, "zona", "zonaSeleccionada"),
         "descripcion_hechos": _first(data, "descripcion_hechos", "descripcionHechos"),
@@ -244,6 +248,21 @@ def _apply_ai_result(reporte, result):
     )
 
 
+def _safe_error(exc):
+    return str(exc)[:500] or exc.__class__.__name__
+
+
+def _error_response(detail, source, exc, status_code):
+    return Response(
+        {
+            "detail": detail,
+            "source": source,
+            "error": _safe_error(exc),
+        },
+        status=status_code,
+    )
+
+
 def _run_vulnerabilidades_ai(reporte):
     try:
         result = generar_analisis_vulnerabilidades(
@@ -251,8 +270,9 @@ def _run_vulnerabilidades_ai(reporte):
         )
         _apply_ai_result(reporte, result)
     except Exception as exc:
+        logger.exception("Error IA reporte")
         reporte.estado = ReporteInforme.ESTADO_ERROR_IA
-        reporte.respuesta_ia_raw = {"error": str(exc)}
+        reporte.respuesta_ia_raw = {"error": _safe_error(exc)}
         reporte.save(update_fields=["estado", "respuesta_ia_raw", "actualizado_en"])
 
 
@@ -311,31 +331,91 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
         raise NotImplementedError
 
     def create(self, request, *args, **kwargs):
-        payload = _normalize_payload(request)
-        files = _get_uploaded_images(request)
-        _validate_images(files)
+        logger.info("Creando reporte informe")
+
+        try:
+            payload = _normalize_payload(request)
+            files = _get_uploaded_images(request)
+            _validate_images(files)
+        except ValidationError:
+            logger.exception("Error validando payload reporte informe")
+            raise
+        except Exception as exc:
+            logger.exception("Error creando reporte informe")
+            return _error_response(
+                "No se pudo procesar la solicitud del reporte",
+                "payload",
+                exc,
+                status.HTTP_400_BAD_REQUEST,
+            )
 
         serializer = self.get_serializer(data=payload, context={"request": request})
-        serializer.is_valid(raise_exception=True)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except ValidationError as exc:
+            logger.exception("Error validando serializer reporte informe")
+            return Response(
+                {
+                    "detail": "Datos invalidos para crear reporte",
+                    "source": "serializer",
+                    "error": serializer.errors,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         instalacion = serializer.validated_data["instalacion"]
         if not user_can_access_instalacion(request.user, instalacion):
             raise PermissionDenied("No tienes acceso a esta instalacion.")
 
-        descripciones = _get_list(request.data, "descripciones", "descripciones[]")
-        recomendaciones = _get_list(request.data, "recomendacionesFoto", "recomendacionesFoto[]")
-
-        with transaction.atomic():
+        try:
             reporte = ReporteInforme.objects.create(
                 usuario_creador=request.user,
                 estado=ReporteInforme.ESTADO_BORRADOR,
                 **serializer.validated_data,
             )
+        except Exception as exc:
+            logger.exception("Error creando reporte informe")
+            return _error_response(
+                "No se pudo crear el reporte",
+                "db_create",
+                exc,
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-            for index, file in enumerate(files):
+        descripciones = _get_list(request.data, "descripciones", "descripciones[]")
+        recomendaciones = _get_list(request.data, "recomendacionesFoto", "recomendacionesFoto[]")
+
+        for index, file in enumerate(files):
+            try:
                 storage_file, stored_name, stored_content_type = _prepare_image_for_storage(file)
                 key = reporte_imagen_upload_key(reporte.id, stored_name)
+            except ValidationError:
+                reporte.delete()
+                logger.exception("Error validando imagen reporte")
+                raise
+            except Exception as exc:
+                reporte.delete()
+                logger.exception("Error preparando imagen reporte")
+                return _error_response(
+                    "No se pudo preparar imagen del reporte",
+                    "image_prepare",
+                    exc,
+                    status.HTTP_400_BAD_REQUEST,
+                )
+
+            try:
                 upload_document(file=storage_file, key=key)
+            except Exception as exc:
+                reporte.delete()
+                logger.exception("Error subiendo imagen reporte a R2")
+                return _error_response(
+                    "No se pudo subir imagen a Cloudflare R2",
+                    "r2_upload",
+                    exc,
+                    status.HTTP_502_BAD_GATEWAY,
+                )
+
+            try:
                 ImagenReporteInforme.objects.create(
                     reporte=reporte,
                     storage_key=key,
@@ -351,12 +431,30 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
                     ),
                     orden=index,
                 )
+            except Exception as exc:
+                reporte.delete()
+                logger.exception("Error creando imagen reporte informe")
+                return _error_response(
+                    "No se pudo registrar imagen del reporte",
+                    "image_db_create",
+                    exc,
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
         if reporte.tipo_reporte == ReporteInforme.TIPO_VULNERABILIDADES:
             _run_vulnerabilidades_ai(reporte)
 
-        detail = ReporteInformeDetailSerializer(reporte, context={"request": request})
-        return Response(detail.data, status=status.HTTP_201_CREATED)
+        try:
+            detail = ReporteInformeDetailSerializer(reporte, context={"request": request})
+            return Response(detail.data, status=status.HTTP_201_CREATED)
+        except Exception as exc:
+            logger.exception("Error creando reporte informe")
+            return _error_response(
+                "Reporte creado, pero no se pudo serializar la respuesta",
+                "response_serialization",
+                exc,
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @action(detail=False, methods=["post"], url_path="importar")
     def importar(self, request):

@@ -1,3 +1,5 @@
+import logging
+
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -6,6 +8,8 @@ from instalacion.models import Instalacion
 
 from .models import ImagenReporteInforme, ReporteInforme
 
+
+logger = logging.getLogger(__name__)
 
 TIPO_REPORTE_ALIASES = {
     "pre-informe": ReporteInforme.TIPO_PRE_INFORME,
@@ -37,7 +41,11 @@ class ImagenReporteInformeSerializer(serializers.ModelSerializer):
     def get_url_imagen(self, obj):
         if not obj.storage_key:
             return ""
-        return generate_signed_url(obj.storage_key, expires=300, disposition="inline")
+        try:
+            return generate_signed_url(obj.storage_key, expires=600, disposition="inline")
+        except Exception:
+            logger.exception("Error generando signed URL reporte")
+            return ""
 
 
 class ReporteInformeListSerializer(serializers.ModelSerializer):

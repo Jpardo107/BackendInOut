@@ -130,7 +130,7 @@ R2_ENDPOINT_URL = os.getenv("R2_ENDPOINT_URL")
 
 # Variables de entorno OpenAI / reportes
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 REPORTES_IMAGE_MAX_SIZE = int(os.getenv("REPORTES_IMAGE_MAX_SIZE", 10 * 1024 * 1024))
 REPORTES_IMPORT_MAX_SIZE = int(os.getenv("REPORTES_IMPORT_MAX_SIZE", 20 * 1024 * 1024))
 

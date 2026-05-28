@@ -96,7 +96,12 @@ def _get_openai_client():
 def _image_payload(reporte: ReporteInforme):
     content = []
     for imagen in reporte.imagenes.all().order_by("orden", "id"):
-        url = generate_signed_url(imagen.storage_key, expires=600, disposition="inline")
+        try:
+            url = generate_signed_url(imagen.storage_key, expires=600, disposition="inline")
+        except Exception:
+            logger.exception("Error generando signed URL reporte")
+            raise
+
         content.append(
             {
                 "type": "input_text",
@@ -153,9 +158,7 @@ def generar_analisis_vulnerabilidades(reporte: ReporteInforme) -> dict:
     if reporte.tipo_reporte != ReporteInforme.TIPO_VULNERABILIDADES:
         return {}
 
-    model = getattr(settings, "OPENAI_MODEL", None)
-    if not model:
-        raise RuntimeError("OPENAI_MODEL no esta configurado.")
+    model = getattr(settings, "OPENAI_MODEL", None) or "gpt-4.1-mini"
 
     client = _get_openai_client()
 
