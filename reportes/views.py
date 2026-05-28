@@ -50,10 +50,20 @@ def user_can_access_instalacion(user, instalacion) -> bool:
 
 def _first(data, *keys, default=""):
     for key in keys:
-        value = data.get(key)
+        value = _get_first_value(data, key, default=None)
         if value not in (None, ""):
             return value
     return default
+
+
+def _get_first_value(data, key, default=""):
+    if not hasattr(data, "get"):
+        return default
+
+    value = data.get(key, default)
+    if isinstance(value, list):
+        return value[0] if value else default
+    return value if value is not None else default
 
 
 def _get_list(data, *keys):
@@ -93,7 +103,7 @@ def _normalize_instalacion(value):
 
 
 def _normalize_payload(request):
-    data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+    data = request.data
     personal_policial = data.get("personalPolicial") if isinstance(data.get("personalPolicial"), dict) else {}
 
     normalized = {
@@ -146,6 +156,13 @@ def _normalize_payload(request):
         normalized["autor_cargo"] = autor_cargo
 
     return {key: value for key, value in normalized.items() if value not in (None, "")}
+
+
+def _image_text_values(data, key, count):
+    values = []
+    for index in range(count):
+        values.append(_get_first_value(data, f"{key}[{index}]", ""))
+    return values
 
 
 def _get_uploaded_images(request):
@@ -336,6 +353,11 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
         try:
             payload = _normalize_payload(request)
             files = _get_uploaded_images(request)
+            if len(files) > 8:
+                return Response(
+                    {"detail": "Maximo 8 imagenes por reporte", "source": "payload"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             _validate_images(files)
         except ValidationError:
             logger.exception("Error validando payload reporte informe")
@@ -382,8 +404,8 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        descripciones = _get_list(request.data, "descripciones", "descripciones[]")
-        recomendaciones = _get_list(request.data, "recomendacionesFoto", "recomendacionesFoto[]")
+        descripciones = _image_text_values(request.data, "descripciones", len(files))
+        recomendaciones = _image_text_values(request.data, "recomendacionesFoto", len(files))
 
         for index, file in enumerate(files):
             try:
