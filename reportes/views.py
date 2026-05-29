@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 
@@ -158,11 +159,61 @@ def _normalize_payload(request):
     return {key: value for key, value in normalized.items() if value not in (None, "")}
 
 
-def _image_text_values(data, key, count):
+def _coerce_text_list(value):
+    if value in (None, ""):
+        return []
+    if isinstance(value, (list, tuple)):
+        if len(value) == 1 and isinstance(value[0], str):
+            stripped = value[0].strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                try:
+                    parsed = json.loads(stripped)
+                except (TypeError, ValueError):
+                    pass
+                else:
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed]
+        return [str(item).strip() for item in value]
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        try:
+            parsed = json.loads(stripped)
+        except (TypeError, ValueError):
+            return [stripped]
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed]
+        return [stripped]
+    return [str(value).strip()]
+
+
+def _image_text_values(data, names, count):
+    if isinstance(names, str):
+        names = (names,)
+
+    for name in names:
+        for key in (name, f"{name}[]"):
+            if hasattr(data, "getlist"):
+                values = _coerce_text_list(data.getlist(key))
+                if values:
+                    return values
+
+            if hasattr(data, "get"):
+                values = _coerce_text_list(data.get(key))
+                if values:
+                    return values
+
     values = []
     for index in range(count):
-        values.append(_get_first_value(data, f"{key}[{index}]", ""))
+        values.append(_indexed_value(data, names, index))
     return values
+
+
+def _image_text_value(values, index):
+    if index < len(values):
+        return values[index]
+    return ""
 
 
 def _get_uploaded_images(request):
@@ -181,9 +232,6 @@ def _get_uploaded_report_file(request):
 
 
 def _validate_images(files):
-    if len(files) > 8:
-        raise ValidationError({"fotos": "Solo se permiten hasta 8 imagenes por reporte."})
-
     max_size = getattr(settings, "REPORTES_IMAGE_MAX_SIZE", 10 * 1024 * 1024)
     for file in files:
         _, ext = os.path.splitext(getattr(file, "name", "") or "")
@@ -353,11 +401,6 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
         try:
             payload = _normalize_payload(request)
             files = _get_uploaded_images(request)
-            if len(files) > 8:
-                return Response(
-                    {"detail": "Maximo 8 imagenes por reporte", "source": "payload"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
             _validate_images(files)
         except ValidationError:
             logger.exception("Error validando payload reporte informe")
@@ -404,8 +447,29 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        descripciones = _image_text_values(request.data, "descripciones", len(files))
-        recomendaciones = _image_text_values(request.data, "recomendacionesFoto", len(files))
+        descripciones = _image_text_values(
+            request.data,
+            (
+                "descripciones",
+                "descripcionFoto",
+                "descripcionFotos",
+                "descripcionesFoto",
+                "fotoDescripcion",
+                "fotoDescripciones",
+            ),
+            len(files),
+        )
+        recomendaciones = _image_text_values(
+            request.data,
+            (
+                "recomendacionesFoto",
+                "recomendacionFoto",
+                "recomendacionesFotos",
+                "fotoRecomendacion",
+                "fotoRecomendaciones",
+            ),
+            len(files),
+        )
 
         for index, file in enumerate(files):
             try:
@@ -444,13 +508,8 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
                     nombre_original=stored_name,
                     mime_type=stored_content_type,
                     size=getattr(storage_file, "size", 0) or 0,
-                    descripcion=_indexed_value(request.data, ("descripciones", "descripcionFoto"), index, descripciones),
-                    recomendacion_usuario=_indexed_value(
-                        request.data,
-                        ("recomendacionesFoto", "recomendacionFoto"),
-                        index,
-                        recomendaciones,
-                    ),
+                    descripcion=_image_text_value(descripciones, index),
+                    recomendacion_usuario=_image_text_value(recomendaciones, index),
                     orden=index,
                 )
             except Exception as exc:

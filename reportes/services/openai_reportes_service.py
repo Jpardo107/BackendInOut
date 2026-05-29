@@ -126,6 +126,9 @@ Reglas de analisis:
 - Usa las descripciones de fotos como evidencia principal.
 - Usa recomendaciones por foto como sugerencias del supervisor.
 - Usa analisis_final_usuario como base, pero mejoralo profesionalmente.
+- En texto_final_pdf incluye una seccion "Evidencia fotografica" con cada imagen numerada.
+- En esa seccion conserva la descripcion del supervisor y la recomendacion asociada a cada imagen.
+- Si hay imagenes, no omitas la evidencia fotografica aunque el analisis general sea breve.
 - No reemplaces completamente el criterio humano.
 - Complementa, ordena y profesionaliza.
 - Si una imagen no permite concluir algo con certeza, indicalo.
