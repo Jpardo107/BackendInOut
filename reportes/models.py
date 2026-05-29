@@ -35,10 +35,12 @@ class ReporteInforme(models.Model):
     )
 
     ESTADO_BORRADOR = "borrador"
+    ESTADO_PROCESANDO_IA = "procesando_ia"
     ESTADO_GENERADO = "generado"
     ESTADO_ERROR_IA = "error_ia"
     ESTADO_CHOICES = (
         (ESTADO_BORRADOR, "Borrador"),
+        (ESTADO_PROCESANDO_IA, "Procesando IA"),
         (ESTADO_GENERADO, "Generado"),
         (ESTADO_ERROR_IA, "Error IA"),
     )

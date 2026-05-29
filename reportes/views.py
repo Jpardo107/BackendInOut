@@ -1,10 +1,11 @@
 import json
 import logging
 import os
+import threading
 
 from django.conf import settings
 from django.core.files.base import ContentFile
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from django.db.models import Count
 from django.utils.dateparse import parse_date
 from rest_framework import status, viewsets
@@ -341,6 +342,27 @@ def _run_vulnerabilidades_ai(reporte):
         reporte.save(update_fields=["estado", "respuesta_ia_raw", "actualizado_en"])
 
 
+def _run_vulnerabilidades_ai_by_id(reporte_id):
+    close_old_connections()
+    try:
+        reporte = ReporteInforme.objects.get(id=reporte_id)
+        _run_vulnerabilidades_ai(reporte)
+    finally:
+        close_old_connections()
+
+
+def _schedule_vulnerabilidades_ai(reporte):
+    reporte.estado = ReporteInforme.ESTADO_PROCESANDO_IA
+    reporte.save(update_fields=["estado", "actualizado_en"])
+
+    thread = threading.Thread(
+        target=_run_vulnerabilidades_ai_by_id,
+        args=(reporte.id,),
+        daemon=True,
+    )
+    transaction.on_commit(thread.start)
+
+
 class ReporteInformeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -523,7 +545,7 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
                 )
 
         if reporte.tipo_reporte == ReporteInforme.TIPO_VULNERABILIDADES:
-            _run_vulnerabilidades_ai(reporte)
+            _schedule_vulnerabilidades_ai(reporte)
 
         try:
             detail = ReporteInformeDetailSerializer(reporte, context={"request": request})
@@ -586,7 +608,7 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
             )
 
         if reporte.tipo_reporte == ReporteInforme.TIPO_VULNERABILIDADES:
-            _run_vulnerabilidades_ai(reporte)
+            _schedule_vulnerabilidades_ai(reporte)
 
         detail = ReporteInformeDetailSerializer(reporte, context={"request": request})
         return Response(detail.data, status=status.HTTP_201_CREATED)
@@ -600,16 +622,13 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
         if reporte.tipo_reporte != ReporteInforme.TIPO_VULNERABILIDADES:
             raise ValidationError({"tipo_reporte": "La IA esta habilitada solo para vulnerabilidades por ahora."})
 
-        try:
-            result = generar_analisis_vulnerabilidades(reporte)
-            _apply_ai_result(reporte, result)
-        except Exception as exc:
-            reporte.estado = ReporteInforme.ESTADO_ERROR_IA
-            reporte.respuesta_ia_raw = {"error": str(exc)}
-            reporte.save(update_fields=["estado", "respuesta_ia_raw", "actualizado_en"])
-            return Response(
-                ReporteIAResultSerializer(reporte, context={"request": request}).data,
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
+        if reporte.estado == ReporteInforme.ESTADO_GENERADO:
+            return Response(ReporteIAResultSerializer(reporte, context={"request": request}).data)
 
-        return Response(ReporteIAResultSerializer(reporte, context={"request": request}).data)
+        if reporte.estado != ReporteInforme.ESTADO_PROCESANDO_IA:
+            _schedule_vulnerabilidades_ai(reporte)
+
+        return Response(
+            ReporteIAResultSerializer(reporte, context={"request": request}).data,
+            status=status.HTTP_202_ACCEPTED,
+        )
