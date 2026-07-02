@@ -49,6 +49,7 @@ urlpatterns = [
     # Endpoints
     path('api/cargo-fijo/', include('cargo_fijo.urls')),
     path('api/documentacion/', include('documentacion.urls')),
+    path('api/inventario/', include('inventario.urls')),
     path('api/supervision/', include('supervision.urls')),
     path('api/', include('reportes.urls')),
     path('', include('instalacion.urls')),

@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'documentacion',
     'cargo_fijo',
     'reportes',
+    'inventario',
 ]
 
 REST_FRAMEWORK = {
