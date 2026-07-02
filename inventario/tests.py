@@ -72,6 +72,31 @@ class MovimientoInventarioTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
 
+    def test_entrega_a_operaciones_permite_usuario_final_vacio(self):
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="CAMISA",
+            talla_prenda="L",
+            cantidad_prenda=5,
+            stock_actual=5,
+        )
+
+        serializer = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 2,
+                "observacion": "Operaciones",
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        movimiento = serializer.save()
+        prenda.refresh_from_db()
+
+        self.assertIsNone(movimiento.usuario_final)
+        self.assertEqual(movimiento.stock_despues, 3)
+        self.assertEqual(prenda.stock_actual, 3)
+
     def test_ingreso_suma_stock(self):
         prenda = PrendaInventario.objects.create(
             nombre_prenda="CAMISA",

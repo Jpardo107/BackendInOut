@@ -8,4 +8,12 @@ class IsInventarioRole(BasePermission):
         user = request.user
         cargo = getattr(getattr(user, "cargo", None), "nombre", "") or ""
         cargo = cargo.strip().lower()
-        return bool(user and user.is_authenticated and ("rrhh" in cargo or "supervisor" in cargo))
+        allowed_cargo = any(
+            role in cargo
+            for role in ("rrhh", "supervisor", "administrador", "administrativo", "admin")
+        )
+        return bool(
+            user
+            and user.is_authenticated
+            and (user.is_staff or user.is_superuser or allowed_cargo)
+        )

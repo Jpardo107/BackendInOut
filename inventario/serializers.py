@@ -113,9 +113,16 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
         if cantidad <= 0:
             raise serializers.ValidationError({"cantidad": "La cantidad debe ser mayor a cero."})
 
-        if tipo == MovimientoInventario.TIPO_ENTREGA and not attrs.get("usuario_final"):
+        observacion = (attrs.get("observacion") or "").strip().lower()
+        entrega_a_operaciones = observacion == "operaciones"
+
+        if (
+            tipo == MovimientoInventario.TIPO_ENTREGA
+            and not attrs.get("usuario_final")
+            and not entrega_a_operaciones
+        ):
             raise serializers.ValidationError(
-                {"usuario_final": "La entrega debe indicar el usuario final."}
+                {"usuario_final": "La entrega debe indicar el supervisor receptor u Operaciones."}
             )
 
         return attrs
