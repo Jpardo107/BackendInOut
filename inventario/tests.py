@@ -1,4 +1,5 @@
 from django.test import TestCase
+from rest_framework.test import APIClient
 from rest_framework import serializers
 
 from user.models import Cargo, Usuario
@@ -7,6 +8,19 @@ from .serializers import MovimientoInventarioSerializer, PrendaInventarioSeriali
 
 
 class PrendaInventarioTests(TestCase):
+    def setUp(self):
+        cargo = Cargo.objects.create(nombre="Administrador")
+        self.admin_user = Usuario.objects.create_user(
+            username="admin.inventario",
+            password="test-pass",
+            nombres="Admin",
+            apellidos="Inventario",
+            rut="22222222-2",
+            email="admin.inventario@example.com",
+            cargo=cargo,
+            is_staff=True,
+        )
+
     def test_no_permite_prenda_talla_duplicada_normalizada(self):
         PrendaInventario.objects.create(
             nombre_prenda="POLAR HOMBRE",
@@ -38,6 +52,21 @@ class PrendaInventarioTests(TestCase):
 
         self.assertEqual(prenda.codigo_barra, "INV-PANTALON-HOMBRE-44")
         self.assertEqual(prenda.codigo_qr, "inout://inventario/prenda/INV-PANTALON-HOMBRE-44")
+
+    def test_buscar_codigo_resuelve_barra_qr_y_segmento_final(self):
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="Pantalon Hombre",
+            talla_prenda="44",
+            cantidad_prenda=4,
+            stock_actual=4,
+        )
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+
+        for codigo in [prenda.codigo_barra, prenda.codigo_qr, "INV-PANTALON-HOMBRE-44"]:
+            response = client.get("/api/inventario/prendas/buscar-codigo/", {"codigo": codigo})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["id"], prenda.id)
 
 
 class MovimientoInventarioTests(TestCase):

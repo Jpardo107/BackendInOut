@@ -1,9 +1,19 @@
 from django.db import models
 from rest_framework import filters, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.response import Response
 
 from .models import MovimientoInventario, PrendaInventario
 from .permissions import IsInventarioRole
 from .serializers import MovimientoInventarioSerializer, PrendaInventarioSerializer
+
+
+def normalize_scanned_code(value):
+    code = str(value or "").strip()
+    if not code:
+        return ""
+    return code.rstrip("/").split("/")[-1] if "/" in code else code
 
 
 class PrendaInventarioViewSet(viewsets.ModelViewSet):
@@ -37,6 +47,30 @@ class PrendaInventarioViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(stock_actual__lte=models.F("stock_critico"))
 
         return queryset
+
+    @action(detail=False, methods=["get"], url_path="buscar-codigo")
+    def buscar_codigo(self, request):
+        codigo = request.query_params.get("codigo", "")
+        codigo_normalizado = normalize_scanned_code(codigo)
+
+        if not codigo_normalizado:
+            raise ValidationError({"codigo": "Debes indicar un codigo para buscar."})
+
+        prenda = (
+            self.get_queryset()
+            .filter(
+                models.Q(codigo_barra__iexact=codigo)
+                | models.Q(codigo_qr__iexact=codigo)
+                | models.Q(codigo_barra__iexact=codigo_normalizado)
+                | models.Q(codigo_qr__iendswith=f"/{codigo_normalizado}")
+            )
+            .first()
+        )
+
+        if not prenda:
+            raise NotFound("No existe una prenda asociada al codigo escaneado.")
+
+        return Response(self.get_serializer(prenda).data)
 
 
 class MovimientoInventarioViewSet(viewsets.ModelViewSet):
