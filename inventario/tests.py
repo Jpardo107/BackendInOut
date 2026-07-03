@@ -134,6 +134,33 @@ class MovimientoInventarioTests(TestCase):
         self.assertEqual(movimiento.stock_despues, 3)
         self.assertEqual(prenda.stock_actual, 3)
 
+    def test_entrega_directa_permite_usuario_final_vacio_con_destinatario(self):
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="PANTALON",
+            talla_prenda="42",
+            cantidad_prenda=5,
+            stock_actual=5,
+        )
+
+        serializer = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 1,
+                "observacion": "Entrega directa a solicitante",
+                "destinatario_personal": self.destinatario.id,
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        movimiento = serializer.save()
+        prenda.refresh_from_db()
+
+        self.assertIsNone(movimiento.usuario_final)
+        self.assertEqual(movimiento.destinatario_personal, self.destinatario)
+        self.assertEqual(movimiento.estado_envio, MovimientoInventario.ESTADO_EN_TRANSITO)
+        self.assertEqual(prenda.stock_actual, 4)
+
     def test_entrega_recibida_no_modifica_stock(self):
         cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
         supervisor = Usuario.objects.create_user(

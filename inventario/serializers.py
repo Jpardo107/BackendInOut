@@ -131,14 +131,21 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
 
         observacion = (attrs.get("observacion") or "").strip().lower()
         entrega_a_operaciones = observacion == "operaciones"
+        entrega_directa = observacion == "entrega directa a solicitante"
 
         if (
             tipo == MovimientoInventario.TIPO_ENTREGA
             and not attrs.get("usuario_final")
             and not entrega_a_operaciones
+            and not (entrega_directa and attrs.get("destinatario_personal"))
         ):
             raise serializers.ValidationError(
-                {"usuario_final": "La entrega debe indicar el supervisor receptor u Operaciones."}
+                {
+                    "usuario_final": (
+                        "La entrega debe indicar supervisor, Operaciones "
+                        "o entrega directa a solicitante."
+                    )
+                }
             )
 
         return attrs
