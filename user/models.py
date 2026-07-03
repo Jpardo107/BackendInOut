@@ -45,3 +45,22 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return f"{self.nombres} {self.apellidos}"
+
+
+class PersonalEmpresa(models.Model):
+    rut = models.CharField(max_length=12, unique=True, db_index=True)
+    nombre_completo = models.CharField(max_length=220)
+    ubicacion = models.CharField(max_length=160, blank=True)
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["nombre_completo"]
+        indexes = [
+            models.Index(fields=["ubicacion"]),
+            models.Index(fields=["activo"]),
+        ]
+
+    def __str__(self):
+        return f"{self.nombre_completo} - {self.rut}"

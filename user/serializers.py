@@ -1,6 +1,7 @@
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework import serializers
-from .models import Usuario
+from .models import PersonalEmpresa, Usuario
+from .services.rut import formatear_rut, normalizar_rut
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -26,3 +27,39 @@ class SupervisorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Usuario
         fields = ['id', 'nombres', 'apellidos', 'email', 'cargo', 'rut']
+
+
+class PersonalEmpresaSerializer(serializers.ModelSerializer):
+    rut_formateado = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PersonalEmpresa
+        fields = [
+            'id',
+            'rut',
+            'rut_formateado',
+            'nombre_completo',
+            'ubicacion',
+            'activo',
+            'creado_en',
+            'actualizado_en',
+        ]
+        read_only_fields = ['id', 'rut_formateado', 'creado_en', 'actualizado_en']
+
+    def get_rut_formateado(self, obj):
+        return formatear_rut(obj.rut)
+
+    def validate_rut(self, value):
+        rut = normalizar_rut(value)
+        if not rut:
+            raise serializers.ValidationError("RUT invalido.")
+        return rut
+
+    def validate_nombre_completo(self, value):
+        value = " ".join(str(value or "").split()).upper()
+        if not value:
+            raise serializers.ValidationError("El nombre es obligatorio.")
+        return value
+
+    def validate_ubicacion(self, value):
+        return " ".join(str(value or "").split()).upper()
