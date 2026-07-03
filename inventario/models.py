@@ -101,6 +101,13 @@ class MovimientoInventario(models.Model):
         blank=True,
         related_name="prendas_recibidas",
     )
+    destinatario_personal = models.ForeignKey(
+        "user.PersonalEmpresa",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="movimientos_inventario",
+    )
     observacion = models.TextField(blank=True)
     estado_envio = models.CharField(
         max_length=20,

@@ -36,6 +36,7 @@ class PersonalEmpresaViewSet(viewsets.ModelViewSet):
         search = self.request.query_params.get("search", "").strip()
         ubicacion = self.request.query_params.get("ubicacion", "").strip()
         activo = self.request.query_params.get("activo")
+        limit = self.request.query_params.get("limit")
 
         if search:
             queryset = queryset.filter(
@@ -49,7 +50,16 @@ class PersonalEmpresaViewSet(viewsets.ModelViewSet):
         if activo is not None:
             queryset = queryset.filter(activo=activo.lower() in ("1", "true", "si", "yes"))
 
-        return queryset.order_by("nombre_completo")
+        queryset = queryset.order_by("nombre_completo")
+
+        if limit:
+            try:
+                limit = min(max(int(limit), 1), 50)
+                queryset = queryset[:limit]
+            except (TypeError, ValueError):
+                pass
+
+        return queryset
 
     @action(detail=False, methods=["get"], url_path="dashboard")
     def dashboard(self, request):

@@ -91,7 +91,7 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = (
             MovimientoInventario.objects
-            .select_related("prenda", "usuario_registro", "usuario_final")
+            .select_related("prenda", "usuario_registro", "usuario_final", "destinatario_personal")
         )
         tipo = self.request.query_params.get("tipo")
         prenda_id = self.request.query_params.get("prenda")
@@ -164,6 +164,7 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
                     stock_despues=stock_despues,
                     usuario_registro=request.user,
                     usuario_final=movimiento.usuario_final,
+                    destinatario_personal=movimiento.destinatario_personal,
                     observacion=f"Retorno por entrega {movimiento.id}: {nuevo_estado}",
                     estado_envio=MovimientoInventario.ESTADO_NO_APLICA,
                 )

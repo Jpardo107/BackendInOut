@@ -2,7 +2,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import serializers
 
-from user.models import Cargo, Usuario
+from user.models import Cargo, PersonalEmpresa, Usuario
 from .models import MovimientoInventario, PrendaInventario
 from .serializers import MovimientoInventarioSerializer, PrendaInventarioSerializer
 
@@ -81,6 +81,11 @@ class MovimientoInventarioTests(TestCase):
             email="guardia.test@example.com",
             cargo=cargo,
         )
+        self.destinatario = PersonalEmpresa.objects.create(
+            rut="123456789",
+            nombre_completo="GUARDIA DESTINATARIO",
+            ubicacion="INSTALACION TEST",
+        )
 
     def test_entrega_descuenta_stock(self):
         prenda = PrendaInventario.objects.create(
@@ -115,6 +120,7 @@ class MovimientoInventarioTests(TestCase):
                 "tipo": MovimientoInventario.TIPO_ENTREGA,
                 "cantidad": 2,
                 "observacion": "Operaciones",
+                "destinatario_personal": self.destinatario.id,
             }
         )
 
@@ -123,6 +129,7 @@ class MovimientoInventarioTests(TestCase):
         prenda.refresh_from_db()
 
         self.assertIsNone(movimiento.usuario_final)
+        self.assertEqual(movimiento.destinatario_personal, self.destinatario)
         self.assertEqual(movimiento.estado_envio, MovimientoInventario.ESTADO_EN_TRANSITO)
         self.assertEqual(movimiento.stock_despues, 3)
         self.assertEqual(prenda.stock_actual, 3)
