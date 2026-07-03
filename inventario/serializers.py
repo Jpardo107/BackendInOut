@@ -84,6 +84,8 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
             "usuario_final",
             "usuario_final_nombre",
             "observacion",
+            "estado_envio",
+            "fecha_estado_envio",
             "creado_en",
         ]
         read_only_fields = [
@@ -93,6 +95,7 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
             "usuario_registro",
             "usuario_registro_nombre",
             "usuario_final_nombre",
+            "fecha_estado_envio",
             "creado_en",
         ]
 
@@ -135,6 +138,7 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
             tipo = validated_data["tipo"]
             cantidad = validated_data["cantidad"]
             stock_antes = prenda.stock_actual
+            estado_envio = MovimientoInventario.ESTADO_NO_APLICA
 
             if tipo == MovimientoInventario.TIPO_ENTREGA:
                 if cantidad > stock_antes:
@@ -142,6 +146,7 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
                         {"cantidad": "No hay stock suficiente para registrar la entrega."}
                     )
                 stock_despues = stock_antes - cantidad
+                estado_envio = MovimientoInventario.ESTADO_EN_TRANSITO
             elif tipo in (MovimientoInventario.TIPO_INGRESO, MovimientoInventario.TIPO_RECEPCION):
                 stock_despues = stock_antes + cantidad
             else:
@@ -154,5 +159,6 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
                 **validated_data,
                 stock_antes=stock_antes,
                 stock_despues=stock_despues,
+                estado_envio=estado_envio,
                 usuario_registro=request.user if request else None,
             )

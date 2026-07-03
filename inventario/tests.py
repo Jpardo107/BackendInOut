@@ -123,8 +123,108 @@ class MovimientoInventarioTests(TestCase):
         prenda.refresh_from_db()
 
         self.assertIsNone(movimiento.usuario_final)
+        self.assertEqual(movimiento.estado_envio, MovimientoInventario.ESTADO_EN_TRANSITO)
         self.assertEqual(movimiento.stock_despues, 3)
         self.assertEqual(prenda.stock_actual, 3)
+
+    def test_entrega_recibida_no_modifica_stock(self):
+        cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
+        supervisor = Usuario.objects.create_user(
+            username="supervisor.test",
+            password="test-pass",
+            nombres="Supervisor",
+            apellidos="Test",
+            rut="33333333-3",
+            email="supervisor.test@example.com",
+            cargo=cargo_supervisor,
+        )
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="CAMISA",
+            talla_prenda="L",
+            cantidad_prenda=5,
+            stock_actual=5,
+        )
+        movimiento = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 2,
+                "usuario_final": supervisor.id,
+            }
+        )
+        self.assertTrue(movimiento.is_valid(), movimiento.errors)
+        entrega = movimiento.save()
+        prenda.refresh_from_db()
+        self.assertEqual(prenda.stock_actual, 3)
+
+        client = APIClient()
+        client.force_authenticate(user=supervisor)
+        response = client.patch(
+            f"/api/inventario/movimientos/{entrega.id}/cambiar-estado/",
+            {"estado_envio": MovimientoInventario.ESTADO_RECIBIDO},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        entrega.refresh_from_db()
+        prenda.refresh_from_db()
+        self.assertEqual(entrega.estado_envio, MovimientoInventario.ESTADO_RECIBIDO)
+        self.assertEqual(prenda.stock_actual, 3)
+
+    def test_entrega_devuelta_repone_stock_y_crea_recepcion(self):
+        cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
+        supervisor = Usuario.objects.create_user(
+            username="supervisor.devolucion",
+            password="test-pass",
+            nombres="Supervisor",
+            apellidos="Devolucion",
+            rut="44444444-4",
+            email="supervisor.devolucion@example.com",
+            cargo=cargo_supervisor,
+        )
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="ZAPATO",
+            talla_prenda="42",
+            cantidad_prenda=5,
+            stock_actual=5,
+        )
+        serializer = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 2,
+                "usuario_final": supervisor.id,
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        entrega = serializer.save()
+        prenda.refresh_from_db()
+        self.assertEqual(prenda.stock_actual, 3)
+
+        client = APIClient()
+        client.force_authenticate(user=supervisor)
+        response = client.patch(
+            f"/api/inventario/movimientos/{entrega.id}/cambiar-estado/",
+            {
+                "estado_envio": MovimientoInventario.ESTADO_DEVUELTO,
+                "observacion": "Talla incorrecta",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        entrega.refresh_from_db()
+        prenda.refresh_from_db()
+        self.assertEqual(entrega.estado_envio, MovimientoInventario.ESTADO_DEVUELTO)
+        self.assertEqual(prenda.stock_actual, 5)
+        self.assertTrue(
+            MovimientoInventario.objects.filter(
+                tipo=MovimientoInventario.TIPO_RECEPCION,
+                prenda=prenda,
+                cantidad=2,
+                stock_antes=3,
+                stock_despues=5,
+            ).exists()
+        )
 
     def test_ingreso_suma_stock(self):
         prenda = PrendaInventario.objects.create(

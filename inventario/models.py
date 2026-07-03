@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 from .services.codigos import generar_codigo_barra, generar_codigo_qr, normalizar_texto
 
 
@@ -63,6 +64,20 @@ class MovimientoInventario(models.Model):
         (TIPO_AJUSTE, "Ajuste de inventario"),
     ]
 
+    ESTADO_NO_APLICA = "no_aplica"
+    ESTADO_EN_TRANSITO = "en_transito"
+    ESTADO_RECIBIDO = "recibido"
+    ESTADO_DEVUELTO = "devuelto"
+    ESTADO_CANCELADO = "cancelado"
+
+    ESTADO_ENVIO_CHOICES = [
+        (ESTADO_NO_APLICA, "No aplica"),
+        (ESTADO_EN_TRANSITO, "En transito"),
+        (ESTADO_RECIBIDO, "Recibido"),
+        (ESTADO_DEVUELTO, "Devuelto"),
+        (ESTADO_CANCELADO, "Cancelado"),
+    ]
+
     prenda = models.ForeignKey(
         PrendaInventario,
         on_delete=models.PROTECT,
@@ -87,6 +102,13 @@ class MovimientoInventario(models.Model):
         related_name="prendas_recibidas",
     )
     observacion = models.TextField(blank=True)
+    estado_envio = models.CharField(
+        max_length=20,
+        choices=ESTADO_ENVIO_CHOICES,
+        default=ESTADO_NO_APLICA,
+        db_index=True,
+    )
+    fecha_estado_envio = models.DateTimeField(default=timezone.now)
     creado_en = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -94,6 +116,7 @@ class MovimientoInventario(models.Model):
         indexes = [
             models.Index(fields=["tipo", "creado_en"]),
             models.Index(fields=["prenda", "creado_en"]),
+            models.Index(fields=["estado_envio", "creado_en"]),
         ]
 
     def __str__(self):

@@ -1,4 +1,6 @@
 from django.db import models
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import filters, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
@@ -101,3 +103,70 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(prenda_id=prenda_id)
 
         return queryset
+
+    @action(detail=True, methods=["patch"], url_path="cambiar-estado")
+    def cambiar_estado(self, request, pk=None):
+        nuevo_estado = request.data.get("estado_envio")
+        observacion = str(request.data.get("observacion") or "").strip()
+        estados_permitidos = {
+            MovimientoInventario.ESTADO_RECIBIDO,
+            MovimientoInventario.ESTADO_DEVUELTO,
+            MovimientoInventario.ESTADO_CANCELADO,
+        }
+
+        if nuevo_estado not in estados_permitidos:
+            raise ValidationError({
+                "estado_envio": "Estado invalido. Usa recibido, devuelto o cancelado."
+            })
+
+        with transaction.atomic():
+            movimiento = (
+                MovimientoInventario.objects
+                .select_for_update()
+                .select_related("prenda", "usuario_final", "usuario_registro")
+                .get(pk=pk)
+            )
+
+            if movimiento.tipo != MovimientoInventario.TIPO_ENTREGA:
+                raise ValidationError({"detail": "Solo las entregas tienen estado de envio."})
+
+            if movimiento.estado_envio != MovimientoInventario.ESTADO_EN_TRANSITO:
+                raise ValidationError({
+                    "estado_envio": "Solo una entrega en transito puede cambiar de estado."
+                })
+
+            movimiento.estado_envio = nuevo_estado
+            movimiento.fecha_estado_envio = timezone.now()
+
+            if observacion:
+                movimiento.observacion = (
+                    f"{movimiento.observacion}\n{observacion}".strip()
+                    if movimiento.observacion else observacion
+                )
+
+            movimiento.save(update_fields=["estado_envio", "fecha_estado_envio", "observacion"])
+
+            if nuevo_estado in (
+                MovimientoInventario.ESTADO_DEVUELTO,
+                MovimientoInventario.ESTADO_CANCELADO,
+            ):
+                prenda = PrendaInventario.objects.select_for_update().get(pk=movimiento.prenda_id)
+                stock_antes = prenda.stock_actual
+                stock_despues = stock_antes + movimiento.cantidad
+                prenda.stock_actual = stock_despues
+                prenda.save(update_fields=["stock_actual", "actualizado_en"])
+
+                MovimientoInventario.objects.create(
+                    prenda=prenda,
+                    tipo=MovimientoInventario.TIPO_RECEPCION,
+                    cantidad=movimiento.cantidad,
+                    stock_antes=stock_antes,
+                    stock_despues=stock_despues,
+                    usuario_registro=request.user,
+                    usuario_final=movimiento.usuario_final,
+                    observacion=f"Retorno por entrega {movimiento.id}: {nuevo_estado}",
+                    estado_envio=MovimientoInventario.ESTADO_NO_APLICA,
+                )
+
+        serializer = self.get_serializer(movimiento)
+        return Response(serializer.data)
