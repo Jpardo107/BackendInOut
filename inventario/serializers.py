@@ -70,6 +70,7 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
     usuario_final_nombre = serializers.SerializerMethodField()
     destinatario_nombre = serializers.SerializerMethodField()
     destinatario_rut = serializers.SerializerMethodField()
+    destinatario_ubicacion = serializers.SerializerMethodField()
 
     class Meta:
         model = MovimientoInventario
@@ -88,6 +89,7 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
             "destinatario_personal",
             "destinatario_nombre",
             "destinatario_rut",
+            "destinatario_ubicacion",
             "observacion",
             "estado_envio",
             "fecha_estado_envio",
@@ -102,6 +104,7 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
             "usuario_final_nombre",
             "destinatario_nombre",
             "destinatario_rut",
+            "destinatario_ubicacion",
             "fecha_estado_envio",
             "creado_en",
         ]
@@ -121,6 +124,9 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
 
     def get_destinatario_rut(self, obj):
         return obj.destinatario_personal.rut if obj.destinatario_personal else None
+
+    def get_destinatario_ubicacion(self, obj):
+        return obj.destinatario_personal.ubicacion if obj.destinatario_personal else None
 
     def validate(self, attrs):
         tipo = attrs.get("tipo")
