@@ -11,6 +11,20 @@ from .permissions import IsInventarioRole
 from .serializers import MovimientoInventarioSerializer, PrendaInventarioSerializer
 
 
+def user_has_inventory_admin_role(user):
+    cargo = getattr(getattr(user, "cargo", None), "nombre", "") or ""
+    cargo = cargo.strip().lower()
+    return bool(
+        user
+        and user.is_authenticated
+        and (
+            user.is_staff
+            or user.is_superuser
+            or any(role in cargo for role in ("rrhh", "administrador", "administrativo", "admin"))
+        )
+    )
+
+
 def normalize_scanned_code(value):
     code = str(value or "").strip()
     if not code:
@@ -95,12 +109,23 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
         )
         tipo = self.request.query_params.get("tipo")
         prenda_id = self.request.query_params.get("prenda")
+        estado_envio = self.request.query_params.get("estado_envio")
+        usuario_final = self.request.query_params.get("usuario_final")
 
         if tipo:
             queryset = queryset.filter(tipo=tipo)
 
         if prenda_id:
             queryset = queryset.filter(prenda_id=prenda_id)
+
+        if estado_envio:
+            queryset = queryset.filter(estado_envio=estado_envio)
+
+        if usuario_final:
+            if usuario_final == "me":
+                queryset = queryset.filter(usuario_final=self.request.user)
+            else:
+                queryset = queryset.filter(usuario_final_id=usuario_final)
 
         return queryset
 
@@ -129,6 +154,12 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
 
             if movimiento.tipo != MovimientoInventario.TIPO_ENTREGA:
                 raise ValidationError({"detail": "Solo las entregas tienen estado de envio."})
+
+            if (
+                not user_has_inventory_admin_role(request.user)
+                and movimiento.usuario_final_id != request.user.id
+            ):
+                raise ValidationError({"detail": "No puedes gestionar una entrega asignada a otro supervisor."})
 
             if movimiento.estado_envio != MovimientoInventario.ESTADO_EN_TRANSITO:
                 raise ValidationError({
