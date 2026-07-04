@@ -248,6 +248,48 @@ class MovimientoInventarioTests(TestCase):
         entrega.refresh_from_db()
         self.assertEqual(entrega.estado_envio, MovimientoInventario.ESTADO_RECIBIDO)
 
+    def test_cambiar_estado_es_idempotente_si_estado_ya_fue_aplicado(self):
+        cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
+        supervisor = Usuario.objects.create_user(
+            username="supervisor.idempotente",
+            password="test-pass",
+            nombres="Supervisor",
+            apellidos="Idempotente",
+            rut="66666666-6",
+            email="supervisor.idempotente@example.com",
+            cargo=cargo_supervisor,
+        )
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="CHAQUETA",
+            talla_prenda="L",
+            cantidad_prenda=2,
+            stock_actual=2,
+        )
+        serializer = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 1,
+                "usuario_final": supervisor.id,
+                "destinatario_personal": self.destinatario.id,
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        entrega = serializer.save()
+
+        client = APIClient()
+        client.force_authenticate(user=supervisor)
+        for _ in range(2):
+            response = client.patch(
+                f"/api/inventario/movimientos/{entrega.id}/cambiar-estado/",
+                {"estado_envio": MovimientoInventario.ESTADO_RECIBIDO},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 200)
+
+        entrega.refresh_from_db()
+        self.assertEqual(entrega.estado_envio, MovimientoInventario.ESTADO_RECIBIDO)
+
     def test_entrega_devuelta_repone_stock_y_crea_recepcion(self):
         cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
         supervisor = Usuario.objects.create_user(

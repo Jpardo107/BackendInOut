@@ -145,12 +145,22 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
             })
 
         with transaction.atomic():
-            movimiento = (
-                MovimientoInventario.objects
-                .select_for_update()
-                .select_related("prenda", "usuario_final", "usuario_registro")
-                .get(pk=pk)
-            )
+            try:
+                movimiento = (
+                    MovimientoInventario.objects
+                    .select_for_update()
+                    .select_related("prenda", "usuario_final", "usuario_registro")
+                    .get(pk=pk)
+                )
+            except MovimientoInventario.DoesNotExist:
+                raise NotFound("No existe el movimiento de inventario indicado.")
+
+            response_data = {
+                "id": movimiento.id,
+                "estado_envio": movimiento.estado_envio,
+                "fecha_estado_envio": movimiento.fecha_estado_envio,
+                "observacion": movimiento.observacion,
+            }
 
             if movimiento.tipo != MovimientoInventario.TIPO_ENTREGA:
                 raise ValidationError({"detail": "Solo las entregas tienen estado de envio."})
@@ -161,10 +171,22 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
             ):
                 raise ValidationError({"detail": "No puedes gestionar una entrega asignada a otro supervisor."})
 
+            if movimiento.estado_envio == nuevo_estado:
+                return Response(response_data)
+
+            if movimiento.estado_envio in (
+                MovimientoInventario.ESTADO_RECIBIDO,
+                MovimientoInventario.ESTADO_DEVUELTO,
+                MovimientoInventario.ESTADO_CANCELADO,
+            ):
+                raise ValidationError(
+                    {"estado_envio": "Esta entrega ya fue gestionada y no puede cambiar nuevamente."}
+                )
+
             if movimiento.estado_envio != MovimientoInventario.ESTADO_EN_TRANSITO:
-                raise ValidationError({
-                    "estado_envio": "Solo una entrega en transito puede cambiar de estado."
-                })
+                raise ValidationError(
+                    {"estado_envio": "Solo una entrega en transito puede cambiar de estado."}
+                )
 
             movimiento.estado_envio = nuevo_estado
             movimiento.fecha_estado_envio = timezone.now()
@@ -175,13 +197,20 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
                     if movimiento.observacion else observacion
                 )
 
-            movimiento.save(update_fields=["estado_envio", "fecha_estado_envio", "observacion"])
+            MovimientoInventario.objects.filter(pk=movimiento.pk).update(
+                estado_envio=movimiento.estado_envio,
+                fecha_estado_envio=movimiento.fecha_estado_envio,
+                observacion=movimiento.observacion,
+            )
 
             if nuevo_estado in (
                 MovimientoInventario.ESTADO_DEVUELTO,
                 MovimientoInventario.ESTADO_CANCELADO,
             ):
-                prenda = PrendaInventario.objects.select_for_update().get(pk=movimiento.prenda_id)
+                try:
+                    prenda = PrendaInventario.objects.select_for_update().get(pk=movimiento.prenda_id)
+                except PrendaInventario.DoesNotExist:
+                    raise NotFound("No existe la prenda asociada al movimiento.")
                 stock_antes = prenda.stock_actual
                 stock_despues = stock_antes + movimiento.cantidad
                 prenda.stock_actual = stock_despues
