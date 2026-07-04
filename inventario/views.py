@@ -200,5 +200,9 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
                     estado_envio=MovimientoInventario.ESTADO_NO_APLICA,
                 )
 
-        serializer = self.get_serializer(movimiento)
-        return Response(serializer.data)
+        return Response({
+            "id": movimiento.id,
+            "estado_envio": movimiento.estado_envio,
+            "fecha_estado_envio": movimiento.fecha_estado_envio,
+            "observacion": movimiento.observacion,
+        })

@@ -204,6 +204,50 @@ class MovimientoInventarioTests(TestCase):
         self.assertEqual(entrega.estado_envio, MovimientoInventario.ESTADO_RECIBIDO)
         self.assertEqual(prenda.stock_actual, 3)
 
+    def test_supervisor_puede_marcar_como_recibida_entrega_asignada(self):
+        cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
+        supervisor = Usuario.objects.create_user(
+            username="supervisor.asignado",
+            password="test-pass",
+            nombres="Supervisor",
+            apellidos="Asignado",
+            rut="55555555-5",
+            email="supervisor.asignado@example.com",
+            cargo=cargo_supervisor,
+        )
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="POLERA",
+            talla_prenda="M",
+            cantidad_prenda=3,
+            stock_actual=3,
+        )
+        serializer = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 1,
+                "usuario_final": supervisor.id,
+                "destinatario_personal": self.destinatario.id,
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        entrega = serializer.save()
+
+        client = APIClient()
+        client.force_authenticate(user=supervisor)
+        response = client.patch(
+            f"/api/inventario/movimientos/{entrega.id}/cambiar-estado/",
+            {
+                "estado_envio": MovimientoInventario.ESTADO_RECIBIDO,
+                "observacion": "Entregado con firma",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        entrega.refresh_from_db()
+        self.assertEqual(entrega.estado_envio, MovimientoInventario.ESTADO_RECIBIDO)
+
     def test_entrega_devuelta_repone_stock_y_crea_recepcion(self):
         cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
         supervisor = Usuario.objects.create_user(
