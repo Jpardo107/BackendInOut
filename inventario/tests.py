@@ -1,4 +1,7 @@
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from unittest.mock import patch
+
 from rest_framework.test import APIClient
 from rest_framework import serializers
 
@@ -289,6 +292,54 @@ class MovimientoInventarioTests(TestCase):
 
         entrega.refresh_from_db()
         self.assertEqual(entrega.estado_envio, MovimientoInventario.ESTADO_RECIBIDO)
+
+    @patch("inventario.views.upload_document")
+    def test_crea_comprobante_entrega_asociado_a_movimientos(self, upload_mock):
+        cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
+        supervisor = Usuario.objects.create_user(
+            username="supervisor.comprobante",
+            password="test-pass",
+            nombres="Supervisor",
+            apellidos="Comprobante",
+            rut="77777777-7",
+            email="supervisor.comprobante@example.com",
+            cargo=cargo_supervisor,
+        )
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="CAMISA",
+            talla_prenda="M",
+            cantidad_prenda=2,
+            stock_actual=2,
+        )
+        serializer = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 1,
+                "usuario_final": supervisor.id,
+                "destinatario_personal": self.destinatario.id,
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        entrega = serializer.save()
+
+        client = APIClient()
+        client.force_authenticate(user=supervisor)
+        archivo = SimpleUploadedFile(
+            "comprobante.pdf",
+            b"%PDF-1.4 comprobante",
+            content_type="application/pdf",
+        )
+        response = client.post(
+            "/api/inventario/comprobantes-entrega/",
+            {"movimientos": f"[{entrega.id}]", "archivo": archivo},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["movimientos_ids"], [entrega.id])
+        self.assertTrue(upload_mock.called)
+        self.assertEqual(entrega.comprobantes_entrega.count(), 1)
 
     def test_entrega_devuelta_repone_stock_y_crea_recepcion(self):
         cargo_supervisor = Cargo.objects.create(nombre="Supervisor")

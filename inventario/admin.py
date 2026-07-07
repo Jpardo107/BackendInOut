@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import MovimientoInventario, PrendaInventario
+from .models import ComprobanteEntregaInventario, MovimientoInventario, PrendaInventario
 
 
 @admin.register(PrendaInventario)
@@ -46,3 +46,32 @@ class MovimientoInventarioAdmin(admin.ModelAdmin):
         "observacion",
     )
     readonly_fields = ("stock_antes", "stock_despues", "creado_en")
+
+
+@admin.register(ComprobanteEntregaInventario)
+class ComprobanteEntregaInventarioAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "destinatario_personal",
+        "supervisor",
+        "nombre_original",
+        "mime_type",
+        "size",
+        "creado_en",
+    )
+    list_filter = ("creado_en", "mime_type")
+    search_fields = (
+        "nombre_original",
+        "storage_key",
+        "destinatario_personal__nombre_completo",
+        "supervisor__nombres",
+        "supervisor__apellidos",
+    )
+    readonly_fields = (
+        "storage_key",
+        "nombre_original",
+        "mime_type",
+        "size",
+        "creado_en",
+    )
+    filter_horizontal = ("movimientos",)

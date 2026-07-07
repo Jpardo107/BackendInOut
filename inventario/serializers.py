@@ -1,7 +1,9 @@
 from django.db import transaction
 from rest_framework import serializers
 
-from .models import MovimientoInventario, PrendaInventario
+from documentacion.services.r2_storage import generate_signed_url
+
+from .models import ComprobanteEntregaInventario, MovimientoInventario, PrendaInventario
 from .services.codigos import generar_codigo_barra, generar_codigo_qr, normalizar_texto
 
 
@@ -71,6 +73,8 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
     destinatario_nombre = serializers.SerializerMethodField()
     destinatario_rut = serializers.SerializerMethodField()
     destinatario_ubicacion = serializers.SerializerMethodField()
+    comprobante_entrega_id = serializers.SerializerMethodField()
+    comprobante_descarga_url = serializers.SerializerMethodField()
 
     class Meta:
         model = MovimientoInventario
@@ -90,6 +94,8 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
             "destinatario_nombre",
             "destinatario_rut",
             "destinatario_ubicacion",
+            "comprobante_entrega_id",
+            "comprobante_descarga_url",
             "observacion",
             "estado_envio",
             "fecha_estado_envio",
@@ -105,6 +111,8 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
             "destinatario_nombre",
             "destinatario_rut",
             "destinatario_ubicacion",
+            "comprobante_entrega_id",
+            "comprobante_descarga_url",
             "fecha_estado_envio",
             "creado_en",
         ]
@@ -127,6 +135,24 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
 
     def get_destinatario_ubicacion(self, obj):
         return obj.destinatario_personal.ubicacion if obj.destinatario_personal else None
+
+    def get_comprobante_entrega_id(self, obj):
+        comprobante = obj.comprobantes_entrega.order_by("-creado_en", "-id").first()
+        return comprobante.id if comprobante else None
+
+    def get_comprobante_descarga_url(self, obj):
+        comprobante = obj.comprobantes_entrega.order_by("-creado_en", "-id").first()
+        if not comprobante:
+            return ""
+        try:
+            return generate_signed_url(
+                comprobante.storage_key,
+                expires=600,
+                filename=comprobante.nombre_original or f"comprobante-entrega-{comprobante.id}.pdf",
+                disposition="attachment",
+            )
+        except Exception:
+            return ""
 
     def validate(self, attrs):
         tipo = attrs.get("tipo")
@@ -188,3 +214,51 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
                 estado_envio=estado_envio,
                 usuario_registro=request.user if request else None,
             )
+
+
+class ComprobanteEntregaInventarioSerializer(serializers.ModelSerializer):
+    descarga_url = serializers.SerializerMethodField()
+    movimientos_ids = serializers.PrimaryKeyRelatedField(
+        source="movimientos",
+        many=True,
+        read_only=True,
+    )
+    destinatario_nombre = serializers.SerializerMethodField()
+    supervisor_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ComprobanteEntregaInventario
+        fields = [
+            "id",
+            "movimientos_ids",
+            "destinatario_personal",
+            "destinatario_nombre",
+            "supervisor",
+            "supervisor_nombre",
+            "storage_key",
+            "nombre_original",
+            "mime_type",
+            "size",
+            "descarga_url",
+            "creado_en",
+        ]
+        read_only_fields = fields
+
+    def get_descarga_url(self, obj):
+        try:
+            return generate_signed_url(
+                obj.storage_key,
+                expires=600,
+                filename=obj.nombre_original or f"comprobante-entrega-{obj.id}.pdf",
+                disposition="attachment",
+            )
+        except Exception:
+            return ""
+
+    def get_destinatario_nombre(self, obj):
+        return obj.destinatario_personal.nombre_completo if obj.destinatario_personal else None
+
+    def get_supervisor_nombre(self, obj):
+        if not obj.supervisor:
+            return None
+        return f"{obj.supervisor.nombres} {obj.supervisor.apellidos}"

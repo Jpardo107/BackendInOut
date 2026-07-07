@@ -1,3 +1,6 @@
+import os
+import uuid
+
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -128,3 +131,46 @@ class MovimientoInventario(models.Model):
 
     def __str__(self):
         return f"{self.tipo} {self.cantidad} - {self.prenda}"
+
+
+def comprobante_entrega_upload_key(original_name: str) -> str:
+    _, ext = os.path.splitext(original_name or "")
+    ext = ext.lower()[:10] or ".pdf"
+    return f"inventario/comprobantes/{uuid.uuid4().hex}{ext}"
+
+
+class ComprobanteEntregaInventario(models.Model):
+    movimientos = models.ManyToManyField(
+        MovimientoInventario,
+        related_name="comprobantes_entrega",
+    )
+    destinatario_personal = models.ForeignKey(
+        "user.PersonalEmpresa",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="comprobantes_inventario",
+    )
+    supervisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="comprobantes_inventario_supervisados",
+    )
+    storage_key = models.CharField(max_length=500, unique=True)
+    nombre_original = models.CharField(max_length=255, blank=True, default="")
+    mime_type = models.CharField(max_length=120, blank=True, default="application/pdf")
+    size = models.PositiveIntegerField(default=0)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creado_en", "-id"]
+        indexes = [
+            models.Index(fields=["creado_en"]),
+            models.Index(fields=["destinatario_personal", "creado_en"]),
+            models.Index(fields=["supervisor", "creado_en"]),
+        ]
+
+    def __str__(self):
+        return self.nombre_original or f"Comprobante inventario {self.id}"

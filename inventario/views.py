@@ -1,14 +1,29 @@
+import json
+
 from django.db import models
 from django.db import transaction
 from django.utils import timezone
+from rest_framework import status
 from rest_framework import filters, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
-from .models import MovimientoInventario, PrendaInventario
+from documentacion.services.r2_storage import upload_document
+
+from .models import (
+    ComprobanteEntregaInventario,
+    MovimientoInventario,
+    PrendaInventario,
+    comprobante_entrega_upload_key,
+)
 from .permissions import IsInventarioRole
-from .serializers import MovimientoInventarioSerializer, PrendaInventarioSerializer
+from .serializers import (
+    ComprobanteEntregaInventarioSerializer,
+    MovimientoInventarioSerializer,
+    PrendaInventarioSerializer,
+)
 
 
 def user_has_inventory_admin_role(user):
@@ -250,3 +265,64 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
             "fecha_estado_envio": fecha_estado,
             "observacion": nueva_observacion,
         })
+
+
+class ComprobanteEntregaInventarioViewSet(viewsets.ModelViewSet):
+    serializer_class = ComprobanteEntregaInventarioSerializer
+    permission_classes = [IsInventarioRole]
+    parser_classes = [MultiPartParser, FormParser]
+    http_method_names = ["get", "post", "head", "options"]
+    ordering = ["-creado_en", "-id"]
+
+    def get_queryset(self):
+        return (
+            ComprobanteEntregaInventario.objects
+            .select_related("destinatario_personal", "supervisor")
+            .prefetch_related("movimientos")
+        )
+
+    def create(self, request, *args, **kwargs):
+        archivo = request.FILES.get("archivo")
+        movimientos_raw = request.data.get("movimientos", "")
+
+        if not archivo:
+            raise ValidationError({"archivo": "Debes adjuntar el PDF del comprobante."})
+
+        if getattr(archivo, "content_type", "") != "application/pdf":
+            raise ValidationError({"archivo": "El comprobante debe ser un archivo PDF."})
+
+        try:
+            movimientos_ids = json.loads(movimientos_raw) if isinstance(movimientos_raw, str) else movimientos_raw
+        except json.JSONDecodeError:
+            movimientos_ids = []
+
+        if not isinstance(movimientos_ids, list) or not movimientos_ids:
+            raise ValidationError({"movimientos": "Debes indicar los movimientos incluidos en el comprobante."})
+
+        movimientos = list(
+            MovimientoInventario.objects
+            .select_related("destinatario_personal", "usuario_final")
+            .filter(id__in=movimientos_ids, tipo=MovimientoInventario.TIPO_ENTREGA)
+        )
+
+        if len(movimientos) != len(set(movimientos_ids)):
+            raise ValidationError({"movimientos": "Uno o más movimientos no existen o no son entregas."})
+
+        destinatario = next((movimiento.destinatario_personal for movimiento in movimientos if movimiento.destinatario_personal), None)
+        supervisor = next((movimiento.usuario_final for movimiento in movimientos if movimiento.usuario_final), None)
+        nombre_original = getattr(archivo, "name", "") or "comprobante-entrega.pdf"
+        storage_key = comprobante_entrega_upload_key(nombre_original)
+        upload_document(archivo, storage_key)
+
+        comprobante = ComprobanteEntregaInventario.objects.create(
+            destinatario_personal=destinatario,
+            supervisor=supervisor or request.user,
+            storage_key=storage_key,
+            nombre_original=nombre_original,
+            mime_type=getattr(archivo, "content_type", "") or "application/pdf",
+            size=getattr(archivo, "size", 0) or 0,
+        )
+        comprobante.movimientos.set(movimientos)
+
+        serializer = self.get_serializer(comprobante)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
