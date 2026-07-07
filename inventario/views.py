@@ -8,10 +8,12 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from documentacion.services.r2_storage import generate_signed_url, upload_document
 
 from .models import (
+    AutorizacionEntregaInventario,
     ComprobanteEntregaInventario,
     MovimientoInventario,
     PrendaInventario,
@@ -37,6 +39,45 @@ def user_has_inventory_admin_role(user):
             or any(role in cargo for role in ("rrhh", "administrador", "administrativo", "admin"))
         )
     )
+
+
+def get_cargo_name(user):
+    return (getattr(getattr(user, "cargo", None), "nombre", "") or "").strip()
+
+
+def get_cargo_key(user):
+    return get_cargo_name(user).lower()
+
+
+def user_is_rrhh(user):
+    return "rrhh" in get_cargo_key(user)
+
+
+def user_can_manage_delivery_authorizations(user):
+    cargo = get_cargo_key(user)
+    return bool(
+        user
+        and user.is_authenticated
+        and (
+            (user.is_superuser and "tecnico" in cargo)
+            or "encargado rrhh" in cargo
+        )
+    )
+
+
+def user_is_delivery_authorization_candidate(user):
+    cargo = get_cargo_key(user)
+    return any(role in cargo for role in ("gerente", "operaciones", "supervisor", "rrhh"))
+
+
+def user_can_deliver_inventory(user):
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_staff or user.is_superuser or user_is_rrhh(user):
+        return True
+    if not user_is_delivery_authorization_candidate(user):
+        return False
+    return AutorizacionEntregaInventario.objects.filter(usuario=user, autorizado=True).exists()
 
 
 def normalize_scanned_code(value):
@@ -157,6 +198,9 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
             raise ValidationError({
                 "estado_envio": "Estado invalido. Usa recibido, devuelto o cancelado."
             })
+
+        if nuevo_estado == MovimientoInventario.ESTADO_RECIBIDO and not user_can_deliver_inventory(request.user):
+            raise ValidationError({"detail": "No estas autorizado para entregar inventario."})
 
         try:
             movimiento = (
@@ -340,3 +384,80 @@ class ComprobanteEntregaInventarioViewSet(viewsets.ModelViewSet):
             raise ValidationError({"detail": "No se pudo generar el enlace de descarga del comprobante."})
 
         return Response({"url": url})
+
+
+class AutorizadosEntregaInventarioView(APIView):
+    permission_classes = [IsInventarioRole]
+
+    def get(self, request):
+        usuarios = (
+            request.user.__class__.objects
+            .select_related("cargo")
+            .filter(is_active=True)
+            .filter(
+                models.Q(cargo__nombre__icontains="gerente")
+                | models.Q(cargo__nombre__icontains="operaciones")
+                | models.Q(cargo__nombre__icontains="supervisor")
+                | models.Q(cargo__nombre__icontains="rrhh")
+            )
+            .order_by("nombres", "apellidos")
+        )
+        autorizaciones = {
+            item.usuario_id: item
+            for item in AutorizacionEntregaInventario.objects.filter(usuario__in=usuarios)
+        }
+
+        return Response([
+            {
+                "id": usuario.id,
+                "nombre": f"{usuario.nombres} {usuario.apellidos}".strip(),
+                "username": usuario.username,
+                "email": usuario.email,
+                "cargo": get_cargo_name(usuario),
+                "autorizado": True if user_is_rrhh(usuario) else bool(autorizaciones.get(usuario.id) and autorizaciones[usuario.id].autorizado),
+                "obligatorio": user_is_rrhh(usuario),
+                "editable": not user_is_rrhh(usuario),
+            }
+            for usuario in usuarios
+        ])
+
+    def post(self, request):
+        usuario_id = request.data.get("usuario")
+        autorizado = bool(request.data.get("autorizado"))
+        password = str(request.data.get("password") or "")
+
+        if not request.user.check_password(password):
+            raise ValidationError({"password": "La autenticacion no es valida."})
+
+        if not user_can_manage_delivery_authorizations(request.user):
+            raise ValidationError({"detail": "Solo el tecnico superadmin o el encargado de RRHH puede modificar autorizaciones."})
+
+        try:
+            usuario = request.user.__class__.objects.select_related("cargo").get(pk=usuario_id, is_active=True)
+        except request.user.__class__.DoesNotExist:
+            raise NotFound("No existe el usuario indicado.")
+
+        if user_is_rrhh(usuario):
+            raise ValidationError({"usuario": "RRHH siempre esta autorizado y no se puede modificar."})
+
+        if not user_is_delivery_authorization_candidate(usuario):
+            raise ValidationError({"usuario": "Solo gerentes, operaciones y supervisores pueden ser autorizados."})
+
+        autorizacion, _ = AutorizacionEntregaInventario.objects.update_or_create(
+            usuario=usuario,
+            defaults={
+                "autorizado": autorizado,
+                "actualizado_por": request.user,
+            },
+        )
+
+        return Response({
+            "id": usuario.id,
+            "nombre": f"{usuario.nombres} {usuario.apellidos}".strip(),
+            "username": usuario.username,
+            "email": usuario.email,
+            "cargo": get_cargo_name(usuario),
+            "autorizado": autorizacion.autorizado,
+            "obligatorio": False,
+            "editable": True,
+        })

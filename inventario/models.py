@@ -174,3 +174,28 @@ class ComprobanteEntregaInventario(models.Model):
 
     def __str__(self):
         return self.nombre_original or f"Comprobante inventario {self.id}"
+
+
+class AutorizacionEntregaInventario(models.Model):
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="autorizacion_entrega_inventario",
+    )
+    autorizado = models.BooleanField(default=False)
+    actualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="autorizaciones_entrega_inventario_actualizadas",
+    )
+    actualizado_en = models.DateTimeField(auto_now=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["usuario__nombres", "usuario__apellidos"]
+
+    def __str__(self):
+        estado = "autorizado" if self.autorizado else "no autorizado"
+        return f"{self.usuario} - {estado}"

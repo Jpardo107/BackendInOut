@@ -1,6 +1,11 @@
 from django.contrib import admin
 
-from .models import ComprobanteEntregaInventario, MovimientoInventario, PrendaInventario
+from .models import (
+    AutorizacionEntregaInventario,
+    ComprobanteEntregaInventario,
+    MovimientoInventario,
+    PrendaInventario,
+)
 
 
 @admin.register(PrendaInventario)
@@ -75,3 +80,16 @@ class ComprobanteEntregaInventarioAdmin(admin.ModelAdmin):
         "creado_en",
     )
     filter_horizontal = ("movimientos",)
+
+
+@admin.register(AutorizacionEntregaInventario)
+class AutorizacionEntregaInventarioAdmin(admin.ModelAdmin):
+    list_display = ("usuario", "autorizado", "actualizado_por", "actualizado_en")
+    list_filter = ("autorizado", "actualizado_en")
+    search_fields = (
+        "usuario__nombres",
+        "usuario__apellidos",
+        "usuario__username",
+        "usuario__cargo__nombre",
+    )
+    readonly_fields = ("creado_en", "actualizado_en")

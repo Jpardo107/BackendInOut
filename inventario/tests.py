@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 from rest_framework import serializers
 
 from user.models import Cargo, PersonalEmpresa, Usuario
-from .models import MovimientoInventario, PrendaInventario
+from .models import AutorizacionEntregaInventario, MovimientoInventario, PrendaInventario
 from .serializers import MovimientoInventarioSerializer, PrendaInventarioSerializer
 
 
@@ -175,6 +175,7 @@ class MovimientoInventarioTests(TestCase):
             email="supervisor.test@example.com",
             cargo=cargo_supervisor,
         )
+        AutorizacionEntregaInventario.objects.create(usuario=supervisor, autorizado=True)
         prenda = PrendaInventario.objects.create(
             nombre_prenda="CAMISA",
             talla_prenda="L",
@@ -218,6 +219,7 @@ class MovimientoInventarioTests(TestCase):
             email="supervisor.asignado@example.com",
             cargo=cargo_supervisor,
         )
+        AutorizacionEntregaInventario.objects.create(usuario=supervisor, autorizado=True)
         prenda = PrendaInventario.objects.create(
             nombre_prenda="POLERA",
             talla_prenda="M",
@@ -262,6 +264,7 @@ class MovimientoInventarioTests(TestCase):
             email="supervisor.idempotente@example.com",
             cargo=cargo_supervisor,
         )
+        AutorizacionEntregaInventario.objects.create(usuario=supervisor, autorizado=True)
         prenda = PrendaInventario.objects.create(
             nombre_prenda="CHAQUETA",
             talla_prenda="L",
@@ -292,6 +295,86 @@ class MovimientoInventarioTests(TestCase):
 
         entrega.refresh_from_db()
         self.assertEqual(entrega.estado_envio, MovimientoInventario.ESTADO_RECIBIDO)
+
+    def test_autorizacion_entrega_requiere_encargado_rrhh_reautenticado(self):
+        cargo_rrhh = Cargo.objects.create(nombre="Encargado RRHH")
+        encargado = Usuario.objects.create_user(
+            username="rrhh.encargado",
+            password="test-pass",
+            nombres="RRHH",
+            apellidos="Encargado",
+            rut="99999999-9",
+            email="rrhh.encargado@example.com",
+            cargo=cargo_rrhh,
+        )
+        cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
+        supervisor = Usuario.objects.create_user(
+            username="supervisor.autorizable",
+            password="test-pass",
+            nombres="Supervisor",
+            apellidos="Autorizable",
+            rut="10101010-1",
+            email="supervisor.autorizable@example.com",
+            cargo=cargo_supervisor,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=encargado)
+        response = client.post(
+            "/api/inventario/autorizados-entrega/",
+            {
+                "usuario": supervisor.id,
+                "autorizado": True,
+                "password": "test-pass",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            AutorizacionEntregaInventario.objects.get(usuario=supervisor).autorizado
+        )
+
+    def test_supervisor_no_autorizado_no_puede_marcar_entrega_recibida(self):
+        cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
+        supervisor = Usuario.objects.create_user(
+            username="supervisor.sin.autorizacion",
+            password="test-pass",
+            nombres="Supervisor",
+            apellidos="Sin Autorizacion",
+            rut="12121212-1",
+            email="supervisor.sin.autorizacion@example.com",
+            cargo=cargo_supervisor,
+        )
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="PARKA",
+            talla_prenda="XL",
+            cantidad_prenda=1,
+            stock_actual=1,
+        )
+        serializer = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 1,
+                "usuario_final": supervisor.id,
+                "destinatario_personal": self.destinatario.id,
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        entrega = serializer.save()
+
+        client = APIClient()
+        client.force_authenticate(user=supervisor)
+        response = client.patch(
+            f"/api/inventario/movimientos/{entrega.id}/cambiar-estado/",
+            {"estado_envio": MovimientoInventario.ESTADO_RECIBIDO},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        entrega.refresh_from_db()
+        self.assertEqual(entrega.estado_envio, MovimientoInventario.ESTADO_EN_TRANSITO)
 
     @patch("inventario.views.upload_document")
     def test_crea_comprobante_entrega_asociado_a_movimientos(self, upload_mock):

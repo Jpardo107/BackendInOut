@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    AutorizadosEntregaInventarioView,
     ComprobanteEntregaInventarioViewSet,
     MovimientoInventarioViewSet,
     PrendaInventarioViewSet,
@@ -13,5 +14,6 @@ router.register(r"movimientos", MovimientoInventarioViewSet, basename="inventari
 router.register(r"comprobantes-entrega", ComprobanteEntregaInventarioViewSet, basename="inventario-comprobantes-entrega")
 
 urlpatterns = [
+    path("autorizados-entrega/", AutorizadosEntregaInventarioView.as_view(), name="inventario-autorizados-entrega"),
     path("", include(router.urls)),
 ]
