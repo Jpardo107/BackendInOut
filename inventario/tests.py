@@ -341,6 +341,53 @@ class MovimientoInventarioTests(TestCase):
         self.assertTrue(upload_mock.called)
         self.assertEqual(entrega.comprobantes_entrega.count(), 1)
 
+    @patch("inventario.views.generate_signed_url", return_value="https://r2.test/comprobante.pdf")
+    def test_descarga_comprobante_entrega_retorna_url_firmada(self, signed_url_mock):
+        cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
+        supervisor = Usuario.objects.create_user(
+            username="supervisor.descarga",
+            password="test-pass",
+            nombres="Supervisor",
+            apellidos="Descarga",
+            rut="88888888-8",
+            email="supervisor.descarga@example.com",
+            cargo=cargo_supervisor,
+        )
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="POLAR",
+            talla_prenda="L",
+            cantidad_prenda=1,
+            stock_actual=1,
+        )
+        serializer = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 1,
+                "usuario_final": supervisor.id,
+                "destinatario_personal": self.destinatario.id,
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        entrega = serializer.save()
+        comprobante = entrega.comprobantes_entrega.model.objects.create(
+            destinatario_personal=self.destinatario,
+            supervisor=supervisor,
+            storage_key="inventario/comprobantes/test.pdf",
+            nombre_original="test.pdf",
+            mime_type="application/pdf",
+            size=100,
+        )
+        comprobante.movimientos.add(entrega)
+
+        client = APIClient()
+        client.force_authenticate(user=supervisor)
+        response = client.get(f"/api/inventario/comprobantes-entrega/{comprobante.id}/descargar/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["url"], "https://r2.test/comprobante.pdf")
+        self.assertTrue(signed_url_mock.called)
+
     def test_entrega_devuelta_repone_stock_y_crea_recepcion(self):
         cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
         supervisor = Usuario.objects.create_user(

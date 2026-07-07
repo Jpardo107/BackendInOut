@@ -3,14 +3,13 @@ import json
 from django.db import models
 from django.db import transaction
 from django.utils import timezone
-from rest_framework import status
-from rest_framework import filters, viewsets
+from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
-from documentacion.services.r2_storage import upload_document
+from documentacion.services.r2_storage import generate_signed_url, upload_document
 
 from .models import (
     ComprobanteEntregaInventario,
@@ -326,3 +325,18 @@ class ComprobanteEntregaInventarioViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(comprobante)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["get"], url_path="descargar")
+    def descargar(self, request, pk=None):
+        comprobante = self.get_object()
+        try:
+            url = generate_signed_url(
+                comprobante.storage_key,
+                expires=600,
+                filename=comprobante.nombre_original or f"comprobante-entrega-{comprobante.id}.pdf",
+                disposition="attachment",
+            )
+        except Exception:
+            raise ValidationError({"detail": "No se pudo generar el enlace de descarga del comprobante."})
+
+        return Response({"url": url})
