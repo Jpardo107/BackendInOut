@@ -1,7 +1,10 @@
 import json
+from datetime import datetime, time
 
 from django.db import models
 from django.db import transaction
+from django.db.utils import OperationalError, ProgrammingError
+from django.utils.dateparse import parse_date, parse_datetime
 from django.utils import timezone
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
@@ -11,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from documentacion.services.r2_storage import generate_signed_url, upload_document
+from user.models import PersonalEmpresa
 
 from .models import (
     AutorizacionEntregaInventario,
@@ -77,7 +81,10 @@ def user_can_deliver_inventory(user):
         return True
     if not user_is_delivery_authorization_candidate(user):
         return False
-    return AutorizacionEntregaInventario.objects.filter(usuario=user, autorizado=True).exists()
+    try:
+        return AutorizacionEntregaInventario.objects.filter(usuario=user, autorizado=True).exists()
+    except (OperationalError, ProgrammingError):
+        return False
 
 
 def normalize_scanned_code(value):
@@ -183,6 +190,76 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(usuario_final_id=usuario_final)
 
         return queryset
+
+    @action(detail=False, methods=["post"], url_path="registro-manual")
+    def registro_manual(self, request):
+        if not user_has_inventory_admin_role(request.user):
+            raise ValidationError({"detail": "No tienes permisos para registrar entregas manuales."})
+
+        prenda_id = request.data.get("prenda")
+        destinatario_id = request.data.get("destinatario_personal")
+        cantidad_raw = request.data.get("cantidad")
+        fecha_raw = str(request.data.get("fecha_entrega") or "").strip()
+        observacion = str(request.data.get("observacion") or "").strip()
+
+        try:
+            cantidad = int(cantidad_raw)
+        except (TypeError, ValueError):
+            raise ValidationError({"cantidad": "La cantidad debe ser un numero entero."})
+
+        if cantidad <= 0:
+            raise ValidationError({"cantidad": "La cantidad debe ser mayor a cero."})
+
+        fecha_entrega = parse_datetime(fecha_raw)
+        if fecha_entrega is None:
+            fecha_date = parse_date(fecha_raw)
+            if fecha_date:
+                fecha_entrega = datetime.combine(fecha_date, time.min)
+
+        if fecha_entrega is None:
+            raise ValidationError({"fecha_entrega": "Indica una fecha de entrega valida."})
+
+        if timezone.is_naive(fecha_entrega):
+            fecha_entrega = timezone.make_aware(fecha_entrega, timezone.get_current_timezone())
+
+        if fecha_entrega > timezone.now():
+            raise ValidationError({"fecha_entrega": "La fecha de entrega no puede ser futura."})
+
+        try:
+            destinatario = PersonalEmpresa.objects.get(pk=destinatario_id, activo=True)
+        except PersonalEmpresa.DoesNotExist:
+            raise ValidationError({"destinatario_personal": "Selecciona una persona activa."})
+
+        with transaction.atomic():
+            try:
+                prenda = PrendaInventario.objects.select_for_update().get(pk=prenda_id, activo=True)
+            except PrendaInventario.DoesNotExist:
+                raise ValidationError({"prenda": "Selecciona una prenda activa."})
+
+            stock_antes = prenda.stock_actual
+            stock_despues = stock_antes
+
+            detalle_observacion = "Ingreso manual informativo sin firma"
+            if observacion:
+                detalle_observacion = f"{detalle_observacion}: {observacion}"
+
+            movimiento = MovimientoInventario.objects.create(
+                prenda=prenda,
+                tipo=MovimientoInventario.TIPO_ENTREGA,
+                cantidad=cantidad,
+                stock_antes=stock_antes,
+                stock_despues=stock_despues,
+                usuario_registro=request.user,
+                destinatario_personal=destinatario,
+                observacion=detalle_observacion,
+                estado_envio=MovimientoInventario.ESTADO_RECIBIDO,
+                fecha_estado_envio=fecha_entrega,
+            )
+            MovimientoInventario.objects.filter(pk=movimiento.pk).update(creado_en=fecha_entrega)
+            movimiento.refresh_from_db()
+
+        serializer = self.get_serializer(movimiento)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["patch"], url_path="cambiar-estado")
     def cambiar_estado(self, request, pk=None):
@@ -402,10 +479,13 @@ class AutorizadosEntregaInventarioView(APIView):
             )
             .order_by("nombres", "apellidos")
         )
-        autorizaciones = {
-            item.usuario_id: item
-            for item in AutorizacionEntregaInventario.objects.filter(usuario__in=usuarios)
-        }
+        try:
+            autorizaciones = {
+                item.usuario_id: item
+                for item in AutorizacionEntregaInventario.objects.filter(usuario__in=usuarios)
+            }
+        except (OperationalError, ProgrammingError):
+            autorizaciones = {}
 
         return Response([
             {
@@ -443,13 +523,16 @@ class AutorizadosEntregaInventarioView(APIView):
         if not user_is_delivery_authorization_candidate(usuario):
             raise ValidationError({"usuario": "Solo gerentes, operaciones y supervisores pueden ser autorizados."})
 
-        autorizacion, _ = AutorizacionEntregaInventario.objects.update_or_create(
-            usuario=usuario,
-            defaults={
-                "autorizado": autorizado,
-                "actualizado_por": request.user,
-            },
-        )
+        try:
+            autorizacion, _ = AutorizacionEntregaInventario.objects.update_or_create(
+                usuario=usuario,
+                defaults={
+                    "autorizado": autorizado,
+                    "actualizado_por": request.user,
+                },
+            )
+        except (OperationalError, ProgrammingError):
+            raise ValidationError({"detail": "La tabla de autorizaciones no existe. Ejecuta las migraciones del backend."})
 
         return Response({
             "id": usuario.id,

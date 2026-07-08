@@ -335,6 +335,40 @@ class MovimientoInventarioTests(TestCase):
             AutorizacionEntregaInventario.objects.get(usuario=supervisor).autorizado
         )
 
+    def test_lista_autorizados_muestra_rrhh_obligatorio_y_supervisor(self):
+        cargo_rrhh = Cargo.objects.create(nombre="Administrativo RRHH")
+        rrhh = Usuario.objects.create_user(
+            username="rrhh.visible",
+            password="test-pass",
+            nombres="RRHH",
+            apellidos="Visible",
+            rut="13131313-1",
+            email="rrhh.visible@example.com",
+            cargo=cargo_rrhh,
+        )
+        cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
+        supervisor = Usuario.objects.create_user(
+            username="supervisor.visible",
+            password="test-pass",
+            nombres="Supervisor",
+            apellidos="Visible",
+            rut="14141414-1",
+            email="supervisor.visible@example.com",
+            cargo=cargo_supervisor,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=rrhh)
+        response = client.get("/api/inventario/autorizados-entrega/")
+
+        self.assertEqual(response.status_code, 200)
+        usuarios = {item["username"]: item for item in response.data}
+        self.assertIn(rrhh.username, usuarios)
+        self.assertIn(supervisor.username, usuarios)
+        self.assertTrue(usuarios[rrhh.username]["autorizado"])
+        self.assertTrue(usuarios[rrhh.username]["obligatorio"])
+        self.assertFalse(usuarios[rrhh.username]["editable"])
+
     def test_supervisor_no_autorizado_no_puede_marcar_entrega_recibida(self):
         cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
         supervisor = Usuario.objects.create_user(
@@ -570,3 +604,46 @@ class MovimientoInventarioTests(TestCase):
 
         with self.assertRaises(serializers.ValidationError):
             serializer.save()
+
+    def test_registro_manual_crea_entrega_informativa_sin_descontar_stock(self):
+        cargo_admin = Cargo.objects.create(nombre="Administrador")
+        admin = Usuario.objects.create_user(
+            username="admin.manual",
+            password="test-pass",
+            nombres="Admin",
+            apellidos="Manual",
+            rut="15151515-1",
+            email="admin.manual@example.com",
+            cargo=cargo_admin,
+            is_staff=True,
+        )
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="CAMISA",
+            talla_prenda="M",
+            cantidad_prenda=5,
+            stock_actual=5,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=admin)
+        response = client.post(
+            "/api/inventario/movimientos/registro-manual/",
+            {
+                "prenda": prenda.id,
+                "destinatario_personal": self.destinatario.id,
+                "cantidad": 2,
+                "fecha_entrega": "2025-04-15",
+                "observacion": "Planilla historica",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["estado_envio"], MovimientoInventario.ESTADO_RECIBIDO)
+        self.assertEqual(response.data["destinatario_personal"], self.destinatario.id)
+        self.assertEqual(response.data["stock_antes"], 5)
+        self.assertEqual(response.data["stock_despues"], 5)
+        self.assertIn("2025-04-15", response.data["creado_en"])
+        self.assertIn("Ingreso manual informativo sin firma", response.data["observacion"])
+        prenda.refresh_from_db()
+        self.assertEqual(prenda.stock_actual, 5)
