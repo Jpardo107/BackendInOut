@@ -13,7 +13,7 @@ from reportes.services.report_file_extraction import extract_text_from_report_fi
 
 from .models import Amonestacion, DocumentoLaboral
 from .serializers import AmonestacionSerializer, DocumentoLaboralSerializer
-from .services.openai_service import generar_carta
+from .services.openai_service import AmonestacionGenerationError, generar_carta
 
 
 class DocumentoLaboralViewSet(viewsets.ReadOnlyModelViewSet):
@@ -86,7 +86,7 @@ class AmonestacionViewSet(viewsets.ReadOnlyModelViewSet):
         )
         try:
             amonestacion.carta = generar_carta(amonestacion, contrato.texto_extraido, riohs.texto_extraido)
-        except Exception as exc:
+        except AmonestacionGenerationError as exc:
             return Response(
                 {"detail": f"No fue posible generar la carta: {exc}"},
                 status=status.HTTP_502_BAD_GATEWAY,

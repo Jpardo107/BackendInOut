@@ -1,10 +1,85 @@
 import logging
+import re
+import unicodedata
 
 from django.conf import settings
 from django.utils import timezone
 
 
 logger = logging.getLogger(__name__)
+
+MAX_DOCUMENT_CONTEXT_CHARS = 26000
+CHUNK_SIZE = 3500
+CHUNK_OVERLAP = 400
+STOP_WORDS = {
+    "ante", "como", "con", "del", "desde", "donde", "el", "ella", "en", "entre", "era",
+    "esta", "este", "estos", "fecha", "fue", "guardia", "hecho", "instalacion", "la", "las",
+    "los", "mas", "para", "pero", "por", "que", "se", "sin", "sobre", "sus", "una", "uno",
+    "y", "ya",
+}
+
+
+class AmonestacionGenerationError(RuntimeError):
+    pass
+
+
+def _normalized_words(text):
+    normalized = unicodedata.normalize("NFD", str(text or ""))
+    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn").lower()
+    return {
+        word for word in re.findall(r"[a-z0-9]{3,}", normalized)
+        if word not in STOP_WORDS
+    }
+
+
+def _document_chunks(text):
+    text = str(text or "").strip()
+    if len(text) <= CHUNK_SIZE:
+        return [text] if text else []
+
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + CHUNK_SIZE, len(text))
+        if end < len(text):
+            boundary = max(text.rfind("\n\n", start, end), text.rfind("\n", start, end))
+            if boundary > start + (CHUNK_SIZE // 2):
+                end = boundary
+        chunks.append(text[start:end].strip())
+        if end >= len(text):
+            break
+        start = max(end - CHUNK_OVERLAP, start + 1)
+    return chunks
+
+
+def seleccionar_contexto_relevante(text, consulta, max_chars=MAX_DOCUMENT_CONTEXT_CHARS):
+    """Recuperación léxica local: evita enviar documentos completos y no inventa contenido."""
+    query_words = _normalized_words(consulta)
+    ranked = []
+    for position, chunk in enumerate(_document_chunks(text)):
+        chunk_words = _normalized_words(chunk)
+        matches = query_words & chunk_words
+        score = sum(3 if len(word) >= 7 else 1 for word in matches)
+        if re.search(r"(?i)\b(art[ií]culo|cl[aá]usula|t[ií]tulo)\b", chunk):
+            score += 2
+        ranked.append((score, position, chunk))
+
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    selected = []
+    used = 0
+    for score, position, chunk in ranked:
+        if selected and score <= 0:
+            break
+        available = max_chars - used
+        if available <= 0:
+            break
+        excerpt = chunk[:available]
+        selected.append((position, excerpt))
+        used += len(excerpt)
+
+    # Mantiene el orden original para que títulos y cláusulas conserven continuidad lógica.
+    selected.sort(key=lambda item: item[0])
+    return "\n\n[... fragmento separado ...]\n\n".join(chunk for _, chunk in selected)
 
 SYSTEM_PROMPT = """Eres un abogado laboral especializado en legislación chilena, derecho laboral, seguridad privada y redacción de documentos disciplinarios para empresas.
 
@@ -43,12 +118,23 @@ def generar_carta(amonestacion, contrato_texto, riohs_texto):
     try:
         from openai import OpenAI
     except ImportError as exc:
-        raise RuntimeError("La dependencia openai no está instalada.") from exc
+        raise AmonestacionGenerationError("El servidor no tiene disponible el servicio de redacción.") from exc
 
     if not settings.OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY no está configurada.")
+        raise AmonestacionGenerationError("El servidor no tiene configurado el servicio de redacción.")
 
     reincidencia = "Sí" if amonestacion.reincidencia else "No"
+    consulta = " ".join((
+        amonestacion.tipo_incumplimiento,
+        amonestacion.descripcion,
+        amonestacion.antecedentes or "",
+        "obligaciones prohibiciones incumplimiento procedimiento funciones seguridad sanciones amonestación",
+    ))
+    contrato_contexto = seleccionar_contexto_relevante(contrato_texto, consulta)
+    riohs_contexto = seleccionar_contexto_relevante(riohs_texto, consulta)
+    if not contrato_contexto or not riohs_contexto:
+        raise AmonestacionGenerationError("No se encontró texto utilizable en los documentos laborales.")
+
     user_prompt = f"""Genera una Carta de Amonestación utilizando exclusivamente el Contrato de Trabajo y el Reglamento Interno incluidos en este contexto.
 
 Datos del trabajador:
@@ -66,12 +152,12 @@ Antecedentes adicionales: {amonestacion.antecedentes or 'No informados'}
 
 CONTRATO DE TRABAJO:
 --- INICIO CONTRATO ---
-{contrato_texto}
+{contrato_contexto}
 --- FIN CONTRATO ---
 
 REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD:
 --- INICIO RIOHS ---
-{riohs_texto}
+{riohs_contexto}
 --- FIN RIOHS ---
 
 Sigue exactamente el formato solicitado por el sistema. Si los documentos no contienen una disposición aplicable identificable, indícalo de forma expresa y no inventes una referencia."""
@@ -83,11 +169,21 @@ Sigue exactamente el formato solicitado por el sistema. Si los documentos no con
                 {"role": "system", "content": [{"type": "input_text", "text": SYSTEM_PROMPT}]},
                 {"role": "user", "content": [{"type": "input_text", "text": user_prompt}]},
             ],
+            max_output_tokens=5000,
         )
         carta = (getattr(response, "output_text", None) or "").strip()
         if not carta:
             raise RuntimeError("OpenAI no retornó el contenido de la carta.")
         return carta
-    except Exception:
-        logger.exception("Error generando carta de amonestación")
+    except AmonestacionGenerationError:
         raise
+    except Exception as exc:
+        logger.exception("Error generando carta de amonestación")
+        error_code = getattr(exc, "status_code", None)
+        if error_code == 429:
+            raise AmonestacionGenerationError(
+                "OpenAI alcanzó temporalmente el límite de uso. Intenta nuevamente en unos segundos."
+            ) from exc
+        raise AmonestacionGenerationError(
+            "El servicio de redacción no pudo completar la solicitud. Intenta nuevamente."
+        ) from exc
