@@ -1,6 +1,9 @@
 from django.test import SimpleTestCase
+from types import SimpleNamespace
+from zipfile import ZipFile
 
 from .services.openai_service import seleccionar_contexto_relevante
+from .services.word_service import generar_word_amonestacion
 
 
 class SeleccionContextoTests(SimpleTestCase):
@@ -27,3 +30,19 @@ class SeleccionContextoTests(SimpleTestCase):
             seleccionar_contexto_relevante(documento, "atraso e impuntualidad"),
             documento,
         )
+
+
+class WordAmonestacionTests(SimpleTestCase):
+    def test_genera_docx_valido_con_contenido_y_firmas(self):
+        amonestacion = SimpleNamespace(
+            carta="Santiago, 10 de julio de 2026\n\nSEÑOR\nJUAN PÉREZ\n\nDe nuestra consideración:\n\nCarta breve.",
+            persona=SimpleNamespace(nombre_completo="Juan Pérez", rut="12345678-9"),
+        )
+
+        archivo = generar_word_amonestacion(amonestacion)
+
+        with ZipFile(archivo) as docx:
+            contenido = docx.read("word/document.xml").decode("utf-8")
+        self.assertIn("Carta breve.", contenido)
+        self.assertIn("INOUT SEGURIDAD SpA", contenido)
+        self.assertIn("JUAN PÉREZ", contenido)

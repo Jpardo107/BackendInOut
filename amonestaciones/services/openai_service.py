@@ -89,29 +89,30 @@ Debes redactar documentos con un lenguaje jurídico, formal, profesional, objeti
 
 La carta debe estar preparada para ser impresa y firmada.
 
-La estructura debe ser SIEMPRE la siguiente:
+La estructura debe ser SIEMPRE la siguiente, en formato compacto y continuo:
 
-1. Ciudad y fecha.
-2. Datos del trabajador: Nombre completo y RUT.
-3. Referencia: "Ref.: Carta de Amonestación"
-4. Introducción formal.
-5. Relato detallado de los hechos.
-6. Explicación del riesgo operacional generado por la conducta.
-7. Incumplimientos al Contrato de Trabajo.
-8. Incumplimientos al Reglamento Interno de Orden, Higiene y Seguridad.
-9. Aplicación de la sanción.
-10. Advertencia por reincidencia.
-11. Firma del empleador y trabajador.
+1. Ciudad y fecha, en una sola línea.
+2. Destinatario: SEÑOR, nombre completo en mayúsculas, C.I., PRESENTE.
+3. Referencia: "Ref.: Carta de Amonestación".
+4. Saludo: "De nuestra consideración:".
+5. Introducción formal breve.
+6. Uno o dos párrafos concisos que relaten los hechos y el riesgo operacional.
+7. Fundamentos del Contrato de Trabajo, enumerados únicamente cuando existan varias cláusulas.
+8. Fundamentos del Reglamento Interno, agrupados en un párrafo breve o enumerados si es necesario.
+9. Aplicación de la AMONESTACIÓN ESCRITA y advertencia por reiteración, en un único párrafo.
+10. Firma del empleador y trabajador.
 
 REGLAS OBLIGATORIAS
 
-Nunca inventes hechos ni información no entregada. Si se indica reincidencia, menciónala expresamente; si no existe, no la insinúes. Fundamenta siempre utilizando el Contrato de Trabajo y el RIOHS. Para cada fundamento indica número de artículo o cláusula, título, resumen jurídico de la obligación o prohibición y por qué la conducta es incumplimiento. No copies literalmente los documentos. Cita únicamente disposiciones realmente aplicables y nunca inventes artículos. Incluye todas las obligaciones pertinentes y aplica el principio de proporcionalidad.
+Nunca inventes hechos ni información no entregada. Si se indica reincidencia, menciónala expresamente; si no existe, no la insinúes. Fundamenta siempre utilizando el Contrato de Trabajo y el RIOHS. Para cada fundamento indica el número de artículo, cláusula o letra cuando esté disponible, identifica brevemente la obligación o prohibición y vincúlala con la conducta. No copies literalmente los documentos. Cita únicamente disposiciones realmente aplicables y nunca inventes artículos. Incluye solo las obligaciones directamente pertinentes y aplica el principio de proporcionalidad.
 
 Debe quedar claro qué ocurrió, qué procedimiento fue incumplido, cuál era la obligación del trabajador y cuál fue el riesgo para la empresa o cliente. Cuando corresponda, indica que contrato y reglamento integran la relación laboral.
 
 La sanción siempre será "AMONESTACIÓN ESCRITA". La advertencia final indicará que una reiteración podrá dar lugar a medidas disciplinarias de mayor entidad conforme al Código del Trabajo, el Contrato y el Reglamento Interno.
 
-No uses viñetas salvo para enumerar artículos. El documento debe tener formato de carta, no de informe. No escribas explicaciones fuera de la carta, no uses Markdown y devuelve únicamente la carta final."""
+La extensión ideal es de 450 a 650 palabras y nunca debe superar 750 palabras. Evita repetir los hechos, el riesgo o la conclusión. No crees subtítulos como "Riesgo operacional", "Incumplimientos" o "Aplicación de la sanción"; enlaza esas materias con transiciones naturales como en una carta formal. Usa viñetas solamente para enumerar cláusulas o artículos aplicables. El documento debe tener formato de carta, no de informe. No escribas explicaciones fuera de la carta, no uses Markdown y devuelve únicamente la carta final.
+
+El estilo de referencia es sobrio, moderno y directo: encabezado protocolar, párrafos breves, fundamentos legales concretos y cierre disciplinario en un solo párrafo. Las firmas deben aparecer al final para EMPLEADOR, INOUT SEGURIDAD SpA, RUT 76.435.221-1, y TRABAJADOR con su nombre y RUT."""
 
 
 def generar_carta(amonestacion, contrato_texto, riohs_texto):
@@ -160,7 +161,7 @@ REGLAMENTO INTERNO DE ORDEN, HIGIENE Y SEGURIDAD:
 {riohs_contexto}
 --- FIN RIOHS ---
 
-Sigue exactamente el formato solicitado por el sistema. Si los documentos no contienen una disposición aplicable identificable, indícalo de forma expresa y no inventes una referencia."""
+Sigue exactamente el formato compacto solicitado por el sistema y evita toda repetición. La carta debe parecerse a una comunicación empresarial redactada por un abogado, no a un informe jurídico. Si los documentos no contienen una disposición aplicable identificable, indícalo brevemente y no inventes una referencia."""
 
     try:
         response = OpenAI(api_key=settings.OPENAI_API_KEY).responses.create(
@@ -169,7 +170,7 @@ Sigue exactamente el formato solicitado por el sistema. Si los documentos no con
                 {"role": "system", "content": [{"type": "input_text", "text": SYSTEM_PROMPT}]},
                 {"role": "user", "content": [{"type": "input_text", "text": user_prompt}]},
             ],
-            max_output_tokens=5000,
+            max_output_tokens=2500,
         )
         carta = (getattr(response, "output_text", None) or "").strip()
         if not carta:

@@ -3,6 +3,7 @@ import uuid
 
 from django.conf import settings
 from django.db import transaction
+from django.http import FileResponse
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -14,6 +15,7 @@ from reportes.services.report_file_extraction import extract_text_from_report_fi
 from .models import Amonestacion, DocumentoLaboral
 from .serializers import AmonestacionSerializer, DocumentoLaboralSerializer
 from .services.openai_service import AmonestacionGenerationError, generar_carta
+from .services.word_service import generar_word_amonestacion
 
 
 class DocumentoLaboralViewSet(viewsets.ReadOnlyModelViewSet):
@@ -65,6 +67,18 @@ class AmonestacionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AmonestacionSerializer
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [JSONParser]
+
+    @action(detail=True, methods=["get"], url_path="word")
+    def word(self, request, pk=None):
+        amonestacion = self.get_object()
+        archivo = generar_word_amonestacion(amonestacion)
+        filename = f"carta_amonestacion_{amonestacion.persona.rut}_{amonestacion.id}.docx"
+        return FileResponse(
+            archivo,
+            as_attachment=True,
+            filename=filename,
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
