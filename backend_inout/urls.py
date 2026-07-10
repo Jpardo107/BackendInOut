@@ -52,6 +52,7 @@ urlpatterns = [
     path('api/inventario/', include('inventario.urls')),
     path('api/supervision/', include('supervision.urls')),
     path('api/', include('reportes.urls')),
+    path('api/', include('amonestaciones.urls')),
     path('', include('instalacion.urls')),
     path('api/', include('user.urls')),
 ]

@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'cargo_fijo',
     'reportes',
     'inventario',
+    'amonestaciones',
 ]
 
 REST_FRAMEWORK = {
@@ -134,6 +135,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 REPORTES_IMAGE_MAX_SIZE = int(os.getenv("REPORTES_IMAGE_MAX_SIZE", 10 * 1024 * 1024))
 REPORTES_IMPORT_MAX_SIZE = int(os.getenv("REPORTES_IMPORT_MAX_SIZE", 20 * 1024 * 1024))
+AMONESTACIONES_DOCUMENT_MAX_SIZE = int(os.getenv("AMONESTACIONES_DOCUMENT_MAX_SIZE", 20 * 1024 * 1024))
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
