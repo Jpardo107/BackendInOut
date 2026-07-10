@@ -57,6 +57,10 @@ def user_is_rrhh(user):
     return "rrhh" in get_cargo_key(user)
 
 
+def user_is_supervisor(user):
+    return "supervisor" in get_cargo_key(user)
+
+
 def user_can_manage_delivery_authorizations(user):
     cargo = get_cargo_key(user)
     return bool(
@@ -77,7 +81,8 @@ def user_is_delivery_authorization_candidate(user):
 def user_can_deliver_inventory(user):
     if not user or not user.is_authenticated:
         return False
-    if user.is_staff or user.is_superuser or user_is_rrhh(user):
+    # RRHH y Supervisores pueden concretar entregas por las funciones propias de su cargo.
+    if user.is_staff or user.is_superuser or user_is_rrhh(user) or user_is_supervisor(user):
         return True
     if not user_is_delivery_authorization_candidate(user):
         return False
@@ -494,9 +499,9 @@ class AutorizadosEntregaInventarioView(APIView):
                 "username": usuario.username,
                 "email": usuario.email,
                 "cargo": get_cargo_name(usuario),
-                "autorizado": True if user_is_rrhh(usuario) else bool(autorizaciones.get(usuario.id) and autorizaciones[usuario.id].autorizado),
-                "obligatorio": user_is_rrhh(usuario),
-                "editable": not user_is_rrhh(usuario),
+                "autorizado": True if (user_is_rrhh(usuario) or user_is_supervisor(usuario)) else bool(autorizaciones.get(usuario.id) and autorizaciones[usuario.id].autorizado),
+                "obligatorio": user_is_rrhh(usuario) or user_is_supervisor(usuario),
+                "editable": not (user_is_rrhh(usuario) or user_is_supervisor(usuario)),
             }
             for usuario in usuarios
         ])
@@ -517,8 +522,8 @@ class AutorizadosEntregaInventarioView(APIView):
         except request.user.__class__.DoesNotExist:
             raise NotFound("No existe el usuario indicado.")
 
-        if user_is_rrhh(usuario):
-            raise ValidationError({"usuario": "RRHH siempre esta autorizado y no se puede modificar."})
+        if user_is_rrhh(usuario) or user_is_supervisor(usuario):
+            raise ValidationError({"usuario": "RRHH y Supervisores siempre estan autorizados por su cargo."})
 
         if not user_is_delivery_authorization_candidate(usuario):
             raise ValidationError({"usuario": "Solo gerentes, operaciones y supervisores pueden ser autorizados."})

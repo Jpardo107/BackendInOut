@@ -307,15 +307,15 @@ class MovimientoInventarioTests(TestCase):
             email="rrhh.encargado@example.com",
             cargo=cargo_rrhh,
         )
-        cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
-        supervisor = Usuario.objects.create_user(
-            username="supervisor.autorizable",
+        cargo_gerente = Cargo.objects.create(nombre="Gerente de Operaciones")
+        gerente = Usuario.objects.create_user(
+            username="gerente.autorizable",
             password="test-pass",
             nombres="Supervisor",
             apellidos="Autorizable",
             rut="10101010-1",
             email="supervisor.autorizable@example.com",
-            cargo=cargo_supervisor,
+            cargo=cargo_gerente,
         )
 
         client = APIClient()
@@ -323,7 +323,7 @@ class MovimientoInventarioTests(TestCase):
         response = client.post(
             "/api/inventario/autorizados-entrega/",
             {
-                "usuario": supervisor.id,
+                "usuario": gerente.id,
                 "autorizado": True,
                 "password": "test-pass",
             },
@@ -332,7 +332,7 @@ class MovimientoInventarioTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(
-            AutorizacionEntregaInventario.objects.get(usuario=supervisor).autorizado
+            AutorizacionEntregaInventario.objects.get(usuario=gerente).autorizado
         )
 
     def test_lista_autorizados_muestra_rrhh_obligatorio_y_supervisor(self):
@@ -369,7 +369,7 @@ class MovimientoInventarioTests(TestCase):
         self.assertTrue(usuarios[rrhh.username]["obligatorio"])
         self.assertFalse(usuarios[rrhh.username]["editable"])
 
-    def test_supervisor_no_autorizado_no_puede_marcar_entrega_recibida(self):
+    def test_supervisor_puede_marcar_entrega_recibida_por_su_cargo(self):
         cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
         supervisor = Usuario.objects.create_user(
             username="supervisor.sin.autorizacion",
@@ -406,9 +406,9 @@ class MovimientoInventarioTests(TestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
         entrega.refresh_from_db()
-        self.assertEqual(entrega.estado_envio, MovimientoInventario.ESTADO_EN_TRANSITO)
+        self.assertEqual(entrega.estado_envio, MovimientoInventario.ESTADO_RECIBIDO)
 
     @patch("inventario.views.upload_document")
     def test_crea_comprobante_entrega_asociado_a_movimientos(self, upload_mock):
@@ -643,6 +643,8 @@ class MovimientoInventarioTests(TestCase):
         self.assertEqual(response.data["destinatario_personal"], self.destinatario.id)
         self.assertEqual(response.data["stock_antes"], 5)
         self.assertEqual(response.data["stock_despues"], 5)
+        self.assertEqual(response.data["usuario_registro"], admin.id)
+        self.assertEqual(response.data["usuario_registro_nombre"], "Admin Manual")
         self.assertIn("2025-04-15", response.data["creado_en"])
         self.assertIn("Ingreso manual informativo sin firma", response.data["observacion"])
         prenda.refresh_from_db()
