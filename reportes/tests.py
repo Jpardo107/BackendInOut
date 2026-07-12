@@ -2,6 +2,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import QueryDict
 from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
+from unittest.mock import patch
 
 from instalacion.models import Instalacion
 from user.models import Cargo, Usuario
@@ -103,3 +104,12 @@ class ReporteTextosUpdateTests(TestCase):
         self.imagen.refresh_from_db()
         self.assertEqual(self.reporte.analisis_final_usuario, "")
         self.assertEqual(self.imagen.recomendacion_usuario, "")
+
+    @patch("reportes.views.delete_document")
+    def test_elimina_reporte_imagenes_y_archivos_almacenados(self, delete_document_mock):
+        response = self.client.delete(f"/api/reportes-informes/{self.reporte.id}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(ReporteInforme.objects.filter(id=self.reporte.id).exists())
+        self.assertFalse(ImagenReporteInforme.objects.filter(id=self.imagen.id).exists())
+        delete_document_mock.assert_called_once_with("reportes/test/foto.jpg")

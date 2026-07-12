@@ -15,7 +15,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from documentacion.services.r2_storage import upload_document
+from documentacion.services.r2_storage import delete_document, upload_document
 
 from .models import (
     ImagenReporteInforme,
@@ -417,6 +417,26 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         raise NotImplementedError
+
+    def destroy(self, request, *args, **kwargs):
+        reporte = self.get_object()
+        if not user_can_access_instalacion(request.user, reporte.instalacion):
+            raise PermissionDenied("No tienes acceso a esta instalacion.")
+
+        storage_keys = list(reporte.imagenes.values_list("storage_key", flat=True))
+        if reporte.archivo_origen_storage_key:
+            storage_keys.append(reporte.archivo_origen_storage_key)
+
+        with transaction.atomic():
+            reporte.delete()
+
+        for key in storage_keys:
+            try:
+                delete_document(key)
+            except Exception:
+                logger.exception("El reporte fue eliminado, pero no se pudo borrar el archivo R2 %s", key)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def create(self, request, *args, **kwargs):
         logger.info("Creando reporte informe")
