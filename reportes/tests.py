@@ -128,3 +128,6 @@ class ReporteTextosUpdateTests(TestCase):
         self.assertIn("PRE-INFORME", document_xml)
         self.assertIn("INSTALACION ORIGINAL", document_xml)
         self.assertIn("Texto original", document_xml)
+        self.assertIn("Personal policial no presente en el procedimiento", document_xml)
+        self.assertIn('w:type="page"', document_xml)
+        self.assertIn('w:color="D5DADF"', document_xml)

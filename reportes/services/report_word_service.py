@@ -13,6 +13,7 @@ from reportes.models import ReporteInforme
 
 BRAND = "193040"
 LIGHT_BORDER = "DEE4E8"
+CONTENT_WIDTH_CM = 16.6
 
 
 def _shade(cell, color):
@@ -32,6 +33,50 @@ def _set_cell_text(cell, text, bold=False, color=None, size=9):
     if color:
         run.font.color.rgb = RGBColor.from_string(color)
     cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+
+def _set_table_width(table, width_cm=CONTENT_WIDTH_CM):
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+    tbl_pr = table._tbl.tblPr
+    layout = tbl_pr.first_child_found_in("w:tblLayout")
+    if layout is None:
+        layout = OxmlElement("w:tblLayout")
+        tbl_pr.append(layout)
+    layout.set(qn("w:type"), "fixed")
+    width = tbl_pr.first_child_found_in("w:tblW")
+    if width is None:
+        width = OxmlElement("w:tblW")
+        tbl_pr.append(width)
+    width.set(qn("w:type"), "dxa")
+    width.set(qn("w:w"), str(int(Cm(width_cm).twips)))
+
+
+def _set_table_borders(table, color=LIGHT_BORDER, size="8"):
+    tbl_pr = table._tbl.tblPr
+    borders = tbl_pr.first_child_found_in("w:tblBorders")
+    if borders is None:
+        borders = OxmlElement("w:tblBorders")
+        tbl_pr.append(borders)
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        element = OxmlElement(f"w:{edge}")
+        element.set(qn("w:val"), "single")
+        element.set(qn("w:sz"), size)
+        element.set(qn("w:color"), color)
+        borders.append(element)
+
+
+def _set_cell_margins(cell, top=120, start=140, bottom=120, end=140):
+    tc_pr = cell._tc.get_or_add_tcPr()
+    margins = tc_pr.first_child_found_in("w:tcMar")
+    if margins is None:
+        margins = OxmlElement("w:tcMar")
+        tc_pr.append(margins)
+    for name, value in (("top", top), ("start", start), ("bottom", bottom), ("end", end)):
+        node = OxmlElement(f"w:{name}")
+        node.set(qn("w:w"), str(value))
+        node.set(qn("w:type"), "dxa")
+        margins.append(node)
 
 
 def _heading(document, text, level=1):
@@ -55,20 +100,42 @@ def _body(document, text):
 
 def _info_table(document, rows):
     table = document.add_table(rows=1, cols=2)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = False
-    table.columns[0].width = Cm(4.2)
-    table.columns[1].width = Cm(12.4)
+    _set_table_width(table)
+    _set_table_borders(table)
     header = table.rows[0].cells
     _shade(header[0], BRAND)
     _shade(header[1], BRAND)
     _set_cell_text(header[0], "Campo", bold=True, color="FFFFFF", size=10)
     _set_cell_text(header[1], "Detalle", bold=True, color="FFFFFF", size=10)
+    for cell, width in zip(header, (4.2, 12.4)):
+        cell.width = Cm(width)
+        _set_cell_margins(cell)
     for label, value in rows:
         cells = table.add_row().cells
+        for cell, width in zip(cells, (4.2, 12.4)):
+            cell.width = Cm(width)
+            _set_cell_margins(cell)
         _shade(cells[0], "F1F4F6")
         _set_cell_text(cells[0], label, bold=True)
         _set_cell_text(cells[1], value)
+    return table
+
+
+def _police_absence_banner(document):
+    table = document.add_table(rows=1, cols=1)
+    _set_table_width(table)
+    cell = table.cell(0, 0)
+    cell.width = Cm(CONTENT_WIDTH_CM)
+    _set_cell_margins(cell, top=180, bottom=180)
+    _shade(cell, BRAND)
+    _set_cell_text(
+        cell,
+        "Personal policial no presente en el procedimiento",
+        bold=True,
+        color="FFFFFF",
+        size=10,
+    )
+    cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
     return table
 
 
@@ -107,13 +174,30 @@ def _add_page_number(paragraph):
 
 
 def _add_image_block(document, image, index, include_recommendation):
-    _heading(document, f"Fotografía {index}", level=2)
-    table = document.add_table(rows=1, cols=2)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = False
+    container = document.add_table(rows=1, cols=1)
+    _set_table_width(container)
+    _set_table_borders(container, color="D5DADF", size="7")
+    container_cell = container.cell(0, 0)
+    container_cell.width = Cm(CONTENT_WIDTH_CM)
+    _set_cell_margins(container_cell, top=160, start=180, bottom=160, end=180)
+    _shade(container_cell, "FBFCFD")
+    title_paragraph = container_cell.paragraphs[0]
+    title_paragraph.paragraph_format.space_after = Pt(5)
+    title = title_paragraph.add_run(f"Fotografía {index}")
+    title.bold = True
+    title.font.name = "Aptos Display"
+    title.font.size = Pt(11)
+    title.font.color.rgb = RGBColor.from_string(BRAND)
+
+    table = container_cell.add_table(rows=1, cols=2)
+    _set_table_width(table, width_cm=15.7)
     image_cell, text_cell = table.rows[0].cells
-    image_cell.width = Cm(8)
-    text_cell.width = Cm(8.5)
+    image_cell.width = Cm(7.7)
+    text_cell.width = Cm(8)
+    _set_cell_margins(image_cell, top=60, start=60, bottom=60, end=120)
+    _set_cell_margins(text_cell, top=80, start=120, bottom=80, end=60)
+    row_pr = table.rows[0]._tr.get_or_add_trPr()
+    row_pr.append(OxmlElement("w:cantSplit"))
 
     try:
         buffer = BytesIO()
@@ -130,6 +214,9 @@ def _add_image_block(document, image, index, include_recommendation):
         title.bold = True
         title.font.color.rgb = RGBColor.from_string(BRAND)
         paragraph.add_run(image.recomendacion_usuario or "Sin recomendación.")
+
+    spacer = document.add_paragraph()
+    spacer.paragraph_format.space_after = Pt(2)
 
 
 def generar_word_reporte(reporte):
@@ -182,13 +269,16 @@ def generar_word_reporte(reporte):
 
     if reporte.tipo_reporte == ReporteInforme.TIPO_PRE_INFORME:
         _heading(document, "Personal policial")
-        _info_table(document, [
-            ("Presente", "Sí" if reporte.personal_policial_presente else "No"),
-            ("Personal presente", reporte.personal_presente or "No informado"),
-            ("Carabinero a cargo", reporte.carabinero_cargo or "No informado"),
-            ("Patente de patrulla", reporte.patente_patrulla or "No informada"),
-            ("Número de carro policial", reporte.numero_carro_policial or "No informado"),
-        ])
+        if reporte.personal_policial_presente:
+            _info_table(document, [
+                ("Presente", "Sí"),
+                ("Personal presente", reporte.personal_presente or "No informado"),
+                ("Carabinero a cargo", reporte.carabinero_cargo or "No informado"),
+                ("Patente de patrulla", reporte.patente_patrulla or "No informada"),
+                ("Número de carro policial", reporte.numero_carro_policial or "No informado"),
+            ])
+        else:
+            _police_absence_banner(document)
     else:
         _heading(document, "Análisis IA del informe")
         if reporte.criticidad_general:
@@ -208,6 +298,7 @@ def generar_word_reporte(reporte):
 
     images = reporte.imagenes.all().order_by("orden", "id")
     if images:
+        document.add_page_break()
         _heading(document, "Registro fotográfico")
         for index, image in enumerate(images, 1):
             _add_image_block(document, image, index, reporte.tipo_reporte == ReporteInforme.TIPO_VULNERABILIDADES)
