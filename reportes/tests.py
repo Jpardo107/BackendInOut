@@ -3,6 +3,8 @@ from django.http import QueryDict
 from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
 from unittest.mock import patch
+from zipfile import ZipFile
+from io import BytesIO
 
 from instalacion.models import Instalacion
 from user.models import Cargo, Usuario
@@ -113,3 +115,16 @@ class ReporteTextosUpdateTests(TestCase):
         self.assertFalse(ReporteInforme.objects.filter(id=self.reporte.id).exists())
         self.assertFalse(ImagenReporteInforme.objects.filter(id=self.imagen.id).exists())
         delete_document_mock.assert_called_once_with("reportes/test/foto.jpg")
+
+    @patch("reportes.services.report_word_service.download_document_to_fileobj")
+    def test_descarga_word_del_reporte_con_estilo_y_contenido(self, download_mock):
+        response = self.client.get(f"/api/reportes-informes/{self.reporte.id}/word/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/vnd.openxmlformats", response["Content-Type"])
+        content = b"".join(response.streaming_content)
+        with ZipFile(BytesIO(content)) as docx:
+            document_xml = docx.read("word/document.xml").decode("utf-8")
+        self.assertIn("PRE-INFORME", document_xml)
+        self.assertIn("INSTALACION ORIGINAL", document_xml)
+        self.assertIn("Texto original", document_xml)

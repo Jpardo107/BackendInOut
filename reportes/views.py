@@ -5,6 +5,7 @@ import threading
 
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.http import FileResponse
 from django.db import close_old_connections, transaction
 from django.db.models import Count
 from django.utils.dateparse import parse_date
@@ -32,6 +33,7 @@ from .serializers import (
 )
 from .services.openai_reportes_service import generar_analisis_vulnerabilidades
 from .services.report_file_extraction import extract_text_from_report_file, validate_report_file
+from .services.report_word_service import generar_word_reporte
 
 
 STANDARD_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -437,6 +439,22 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
                 logger.exception("El reporte fue eliminado, pero no se pudo borrar el archivo R2 %s", key)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["get"], url_path="word")
+    def word(self, request, pk=None):
+        reporte = self.get_object()
+        if not user_can_access_instalacion(request.user, reporte.instalacion):
+            raise PermissionDenied("No tienes acceso a esta instalacion.")
+
+        archivo = generar_word_reporte(reporte)
+        tipo = "pre_informe" if reporte.tipo_reporte == ReporteInforme.TIPO_PRE_INFORME else "vulnerabilidades"
+        filename = f"{tipo}_{reporte.instalacion.nombre}_{reporte.fecha_emision}.docx"
+        return FileResponse(
+            archivo,
+            as_attachment=True,
+            filename=filename,
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
 
     def create(self, request, *args, **kwargs):
         logger.info("Creando reporte informe")
