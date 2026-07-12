@@ -206,3 +206,72 @@ class ReporteIAResultSerializer(serializers.ModelSerializer):
             "actualizado_en",
         )
         read_only_fields = fields
+
+
+class ImagenReporteTextoUpdateSerializer(serializers.Serializer):
+    id = serializers.IntegerField(min_value=1)
+    descripcion = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False)
+    recomendacion_usuario = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False)
+
+    def validate(self, attrs):
+        if "descripcion" not in attrs and "recomendacion_usuario" not in attrs:
+            raise serializers.ValidationError("Indica una descripción o recomendación para actualizar.")
+        return attrs
+
+
+class ReporteInformeTextoUpdateSerializer(serializers.ModelSerializer):
+    imagenes = ImagenReporteTextoUpdateSerializer(many=True, required=False)
+
+    class Meta:
+        model = ReporteInforme
+        fields = (
+            "descripcion_hechos",
+            "analisis_previo",
+            "analisis_final_usuario",
+            "personal_presente",
+            "carabinero_cargo",
+            "patente_patrulla",
+            "numero_carro_policial",
+            "resumen_ejecutivo",
+            "conclusion_profesional",
+            "texto_final_pdf",
+            "imagenes",
+        )
+        extra_kwargs = {
+            "descripcion_hechos": {"required": False, "allow_blank": True, "trim_whitespace": False},
+            "analisis_previo": {"required": False, "allow_blank": True, "trim_whitespace": False},
+            "analisis_final_usuario": {"required": False, "allow_blank": True, "trim_whitespace": False},
+            "personal_presente": {"required": False, "allow_blank": True, "trim_whitespace": False},
+            "carabinero_cargo": {"required": False, "allow_blank": True, "trim_whitespace": False},
+            "patente_patrulla": {"required": False, "allow_blank": True, "trim_whitespace": False},
+            "numero_carro_policial": {"required": False, "allow_blank": True, "trim_whitespace": False},
+            "resumen_ejecutivo": {"required": False, "allow_blank": True, "trim_whitespace": False},
+            "conclusion_profesional": {"required": False, "allow_blank": True, "trim_whitespace": False},
+            "texto_final_pdf": {"required": False, "allow_blank": True, "trim_whitespace": False},
+        }
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError("No se enviaron textos para actualizar.")
+
+        if self.instance and self.instance.tipo_reporte == ReporteInforme.TIPO_PRE_INFORME:
+            campos_exclusivos_vulnerabilidades = {
+                "analisis_previo",
+                "analisis_final_usuario",
+                "resumen_ejecutivo",
+                "conclusion_profesional",
+                "texto_final_pdf",
+            }
+            enviados = campos_exclusivos_vulnerabilidades.intersection(attrs.keys())
+            if enviados:
+                raise serializers.ValidationError({
+                    field: "Este campo pertenece exclusivamente a informes de vulnerabilidades."
+                    for field in enviados
+                })
+
+            for image in attrs.get("imagenes", []):
+                if "recomendacion_usuario" in image:
+                    raise serializers.ValidationError({
+                        "imagenes": "Las recomendaciones de imágenes pertenecen exclusivamente a informes de vulnerabilidades."
+                    })
+        return attrs

@@ -28,6 +28,7 @@ from .serializers import (
     ReporteInformeCreateSerializer,
     ReporteInformeDetailSerializer,
     ReporteInformeListSerializer,
+    ReporteInformeTextoUpdateSerializer,
 )
 from .services.openai_reportes_service import generar_analisis_vulnerabilidades
 from .services.report_file_extraction import extract_text_from_report_file, validate_report_file
@@ -632,3 +633,40 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
             ReporteIAResultSerializer(reporte, context={"request": request}).data,
             status=status.HTTP_202_ACCEPTED,
         )
+
+    @action(detail=True, methods=["patch"], url_path="editar-textos", parser_classes=[JSONParser])
+    def editar_textos(self, request, pk=None):
+        reporte = self.get_object()
+        if not user_can_access_instalacion(request.user, reporte.instalacion):
+            raise PermissionDenied("No tienes acceso a esta instalacion.")
+
+        serializer = ReporteInformeTextoUpdateSerializer(
+            reporte,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        imagenes_data = serializer.validated_data.pop("imagenes", [])
+
+        with transaction.atomic():
+            campos_actualizados = []
+            for field, value in serializer.validated_data.items():
+                setattr(reporte, field, value)
+                campos_actualizados.append(field)
+            if campos_actualizados:
+                reporte.save(update_fields=[*campos_actualizados, "actualizado_en"])
+
+            for image_data in imagenes_data:
+                image_id = image_data.pop("id")
+                try:
+                    image = reporte.imagenes.select_for_update().get(id=image_id)
+                except ImagenReporteInforme.DoesNotExist:
+                    raise ValidationError({"imagenes": f"La imagen {image_id} no pertenece a este informe."})
+                for field, value in image_data.items():
+                    setattr(image, field, value)
+                image.save(update_fields=list(image_data.keys()))
+
+        reporte.refresh_from_db()
+        detail = ReporteInformeDetailSerializer(reporte, context={"request": request})
+        return Response(detail.data)
