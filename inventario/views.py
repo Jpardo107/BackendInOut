@@ -1,6 +1,8 @@
 import json
 from datetime import datetime, time
 
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
 from django.db import models
 from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
@@ -22,6 +24,7 @@ from .models import (
     ComprobanteEntregaInventario,
     MovimientoInventario,
     PrendaInventario,
+    RegistroAlertaStock,
     comprobante_entrega_upload_key,
 )
 from .permissions import IsInventarioRole
@@ -561,7 +564,21 @@ class ConfiguracionAlertaStockView(APIView):
         return configuracion
 
     def get(self, request):
-        return Response(ConfiguracionAlertaStockSerializer(self.get_object()).data)
+        data = ConfiguracionAlertaStockSerializer(self.get_object()).data
+        ultimo = RegistroAlertaStock.objects.select_related("prenda").first()
+        data["ultimo_intento"] = (
+            {
+                "prenda": f"{ultimo.prenda.nombre_prenda} / {ultimo.prenda.talla_prenda}",
+                "stock_actual": ultimo.stock_actual,
+                "stock_critico": ultimo.stock_critico,
+                "destinatarios": ultimo.destinatarios,
+                "enviado": ultimo.enviado,
+                "error": ultimo.error,
+                "creado_en": ultimo.creado_en,
+            }
+            if ultimo else None
+        )
+        return Response(data)
 
     def put(self, request):
         if not user_has_inventory_admin_role(request.user):
@@ -573,3 +590,40 @@ class ConfiguracionAlertaStockView(APIView):
         return Response(serializer.data)
 
     patch = put
+
+    def post(self, request):
+        if not user_has_inventory_admin_role(request.user):
+            raise PermissionDenied("Solo usuarios administrativos pueden probar alertas de stock.")
+
+        destinatarios = self.get_object().destinatarios
+        if not destinatarios:
+            raise ValidationError({"detail": "Guarda al menos un correo destinatario antes de realizar la prueba."})
+
+        try:
+            message = EmailMultiAlternatives(
+                subject="PRUEBA: Alertas de stock INOUT",
+                body=(
+                    "Este es un correo de prueba del sistema de alertas de stock de INOUT.\n\n"
+                    "La configuración de correo está operativa."
+                ),
+                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+                to=destinatarios,
+            )
+            message.attach_alternative(
+                '<div style="font-family:Arial,sans-serif;color:#1f2937;max-width:620px">'
+                '<div style="background:#193040;color:white;padding:16px 20px;font-size:18px;font-weight:bold">'
+                'Prueba de alertas de stock INOUT</div>'
+                '<div style="border:1px solid #d9e2ec;padding:20px">'
+                '<p>La configuración de correo está operativa.</p></div></div>',
+                "text/html",
+            )
+            enviados = message.send(fail_silently=False)
+            if enviados != 1:
+                raise RuntimeError("El servidor de correo no confirmó el envío.")
+        except Exception as exc:
+            return Response(
+                {"detail": f"No fue posible enviar el correo de prueba: {str(exc)[:500]}"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response({"detail": "Correo de prueba enviado.", "destinatarios": destinatarios})

@@ -677,3 +677,59 @@ class MovimientoInventarioTests(TestCase):
         registro = RegistroAlertaStock.objects.get()
         self.assertTrue(registro.enviado)
         self.assertEqual(registro.stock_actual, 5)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", DEFAULT_FROM_EMAIL="alertas@inout.cl")
+    def test_administrador_puede_enviar_correo_de_prueba(self):
+        cargo_admin = Cargo.objects.create(nombre="Administrador alertas")
+        admin = Usuario.objects.create_user(
+            username="admin.alertas",
+            password="test-pass",
+            nombres="Admin",
+            apellidos="Alertas",
+            rut="18181818-1",
+            email="admin.alertas@example.com",
+            cargo=cargo_admin,
+            is_staff=True,
+        )
+        ConfiguracionAlertaStock.objects.create(email_1="compras@inout.cl")
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.post("/api/inventario/configuracion-alertas-stock/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["destinatarios"], ["compras@inout.cl"])
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("PRUEBA", mail.outbox[0].subject)
+
+    def test_configuracion_informa_el_ultimo_intento_de_alerta(self):
+        cargo_admin = Cargo.objects.create(nombre="Administrador inventario")
+        admin = Usuario.objects.create_user(
+            username="admin.estado.alerta",
+            password="test-pass",
+            nombres="Admin",
+            apellidos="Estado",
+            rut="19191919-1",
+            email="admin.estado@example.com",
+            cargo=cargo_admin,
+            is_staff=True,
+        )
+        ConfiguracionAlertaStock.objects.create(email_1="compras@inout.cl")
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="PARKA", talla_prenda="L", cantidad_prenda=5, stock_actual=5, stock_critico=5,
+        )
+        RegistroAlertaStock.objects.create(
+            prenda=prenda,
+            stock_actual=5,
+            stock_critico=5,
+            destinatarios=["compras@inout.cl"],
+            error="SMTP no disponible",
+        )
+        client = APIClient()
+        client.force_authenticate(user=admin)
+
+        response = client.get("/api/inventario/configuracion-alertas-stock/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["ultimo_intento"]["enviado"])
+        self.assertEqual(response.data["ultimo_intento"]["error"], "SMTP no disponible")
