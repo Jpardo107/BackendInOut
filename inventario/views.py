@@ -50,6 +50,31 @@ def user_has_inventory_admin_role(user):
     )
 
 
+def get_email_delivery_diagnostics():
+    backend = str(getattr(settings, "EMAIL_BACKEND", ""))
+    host = str(getattr(settings, "EMAIL_HOST", ""))
+    sender = str(getattr(settings, "DEFAULT_FROM_EMAIL", ""))
+    backend_key = backend.lower()
+    errors = []
+
+    if any(name in backend_key for name in ("console", "locmem", "dummy")):
+        errors.append("El backend de correo configurado es solo de prueba y no entrega mensajes reales.")
+    if backend_key.endswith("smtp.emailbackend") and host.strip().lower() in ("", "localhost", "127.0.0.1"):
+        errors.append("EMAIL_HOST no apunta a un servidor SMTP externo.")
+
+    return {
+        "backend": backend,
+        "host": host,
+        "port": getattr(settings, "EMAIL_PORT", None),
+        "sender": sender,
+        "smtp_user": str(getattr(settings, "EMAIL_HOST_USER", "")),
+        "use_tls": bool(getattr(settings, "EMAIL_USE_TLS", False)),
+        "use_ssl": bool(getattr(settings, "EMAIL_USE_SSL", False)),
+        "entrega_real": not errors,
+        "errores": errors,
+    }
+
+
 def get_cargo_name(user):
     return (getattr(getattr(user, "cargo", None), "nombre", "") or "").strip()
 
@@ -565,6 +590,7 @@ class ConfiguracionAlertaStockView(APIView):
 
     def get(self, request):
         data = ConfiguracionAlertaStockSerializer(self.get_object()).data
+        data["diagnostico_correo"] = get_email_delivery_diagnostics()
         ultimo = RegistroAlertaStock.objects.select_related("prenda").first()
         data["ultimo_intento"] = (
             {
@@ -599,6 +625,16 @@ class ConfiguracionAlertaStockView(APIView):
         if not destinatarios:
             raise ValidationError({"detail": "Guarda al menos un correo destinatario antes de realizar la prueba."})
 
+        diagnostico = get_email_delivery_diagnostics()
+        if not diagnostico["entrega_real"]:
+            return Response(
+                {
+                    "detail": " ".join(diagnostico["errores"]),
+                    "diagnostico_correo": diagnostico,
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         try:
             message = EmailMultiAlternatives(
                 subject="PRUEBA: Alertas de stock INOUT",
@@ -626,4 +662,8 @@ class ConfiguracionAlertaStockView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        return Response({"detail": "Correo de prueba enviado.", "destinatarios": destinatarios})
+        return Response({
+            "detail": "El servidor SMTP aceptó el correo de prueba.",
+            "destinatarios": destinatarios,
+            "diagnostico_correo": diagnostico,
+        })

@@ -678,8 +678,14 @@ class MovimientoInventarioTests(TestCase):
         self.assertTrue(registro.enviado)
         self.assertEqual(registro.stock_actual, 5)
 
-    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", DEFAULT_FROM_EMAIL="alertas@inout.cl")
-    def test_administrador_puede_enviar_correo_de_prueba(self):
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_HOST="smtp.example.com",
+        EMAIL_HOST_USER="alertas@example.com",
+        DEFAULT_FROM_EMAIL="alertas@example.com",
+    )
+    @patch("inventario.views.EmailMultiAlternatives.send", return_value=1)
+    def test_administrador_puede_enviar_correo_de_prueba(self, send_mock):
         cargo_admin = Cargo.objects.create(nombre="Administrador alertas")
         admin = Usuario.objects.create_user(
             username="admin.alertas",
@@ -699,8 +705,8 @@ class MovimientoInventarioTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["destinatarios"], ["compras@inout.cl"])
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("PRUEBA", mail.outbox[0].subject)
+        self.assertTrue(response.data["diagnostico_correo"]["entrega_real"])
+        send_mock.assert_called_once_with(fail_silently=False)
 
     def test_configuracion_informa_el_ultimo_intento_de_alerta(self):
         cargo_admin = Cargo.objects.create(nombre="Administrador inventario")
