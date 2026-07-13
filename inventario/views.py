@@ -8,7 +8,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from django.utils import timezone
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,6 +18,7 @@ from user.models import PersonalEmpresa
 
 from .models import (
     AutorizacionEntregaInventario,
+    ConfiguracionAlertaStock,
     ComprobanteEntregaInventario,
     MovimientoInventario,
     PrendaInventario,
@@ -25,6 +26,7 @@ from .models import (
 )
 from .permissions import IsInventarioRole
 from .serializers import (
+    ConfiguracionAlertaStockSerializer,
     ComprobanteEntregaInventarioSerializer,
     MovimientoInventarioSerializer,
     PrendaInventarioSerializer,
@@ -549,3 +551,25 @@ class AutorizadosEntregaInventarioView(APIView):
             "obligatorio": False,
             "editable": True,
         })
+
+
+class ConfiguracionAlertaStockView(APIView):
+    permission_classes = [IsInventarioRole]
+
+    def get_object(self):
+        configuracion, _ = ConfiguracionAlertaStock.objects.get_or_create(pk=1)
+        return configuracion
+
+    def get(self, request):
+        return Response(ConfiguracionAlertaStockSerializer(self.get_object()).data)
+
+    def put(self, request):
+        if not user_has_inventory_admin_role(request.user):
+            raise PermissionDenied("Solo usuarios administrativos pueden configurar alertas de stock.")
+        configuracion = self.get_object()
+        serializer = ConfiguracionAlertaStockSerializer(configuracion, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(actualizado_por=request.user)
+        return Response(serializer.data)
+
+    patch = put

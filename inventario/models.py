@@ -199,3 +199,48 @@ class AutorizacionEntregaInventario(models.Model):
     def __str__(self):
         estado = "autorizado" if self.autorizado else "no autorizado"
         return f"{self.usuario} - {estado}"
+
+
+class ConfiguracionAlertaStock(models.Model):
+    email_1 = models.EmailField(blank=True, default="")
+    email_2 = models.EmailField(blank=True, default="")
+    actualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="configuraciones_alerta_stock_actualizadas",
+    )
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuración de alerta de stock"
+        verbose_name_plural = "Configuración de alertas de stock"
+
+    @property
+    def destinatarios(self):
+        return [email for email in (self.email_1, self.email_2) if email]
+
+
+class RegistroAlertaStock(models.Model):
+    prenda = models.ForeignKey(
+        PrendaInventario,
+        on_delete=models.CASCADE,
+        related_name="alertas_stock",
+    )
+    movimiento = models.ForeignKey(
+        MovimientoInventario,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="alertas_stock",
+    )
+    stock_actual = models.PositiveIntegerField()
+    stock_critico = models.PositiveIntegerField()
+    destinatarios = models.JSONField(default=list)
+    enviado = models.BooleanField(default=False)
+    error = models.TextField(blank=True, default="")
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-creado_en", "-id")

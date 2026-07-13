@@ -1,12 +1,13 @@
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.core import mail
+from django.test import TestCase, override_settings
 from unittest.mock import patch
 
 from rest_framework.test import APIClient
 from rest_framework import serializers
 
 from user.models import Cargo, PersonalEmpresa, Usuario
-from .models import AutorizacionEntregaInventario, MovimientoInventario, PrendaInventario
+from .models import AutorizacionEntregaInventario, ConfiguracionAlertaStock, MovimientoInventario, PrendaInventario, RegistroAlertaStock
 from .serializers import MovimientoInventarioSerializer, PrendaInventarioSerializer
 
 
@@ -649,3 +650,30 @@ class MovimientoInventarioTests(TestCase):
         self.assertIn("Ingreso manual informativo sin firma", response.data["observacion"])
         prenda.refresh_from_db()
         self.assertEqual(prenda.stock_actual, 5)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", DEFAULT_FROM_EMAIL="alertas@inout.cl")
+    def test_envia_correo_una_vez_al_cruzar_stock_minimo(self):
+        ConfiguracionAlertaStock.objects.create(email_1="compras@inout.cl", email_2="rrhh@inout.cl")
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="POLAR MUJER", talla_prenda="M", cantidad_prenda=7, stock_actual=7, stock_critico=5,
+        )
+        serializer = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 2,
+                "usuario_final": self.usuario_final.id,
+                "destinatario_personal": self.destinatario.id,
+            }
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            serializer.save()
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(set(mail.outbox[0].to), {"compras@inout.cl", "rrhh@inout.cl"})
+        self.assertIn("POLAR MUJER", mail.outbox[0].subject)
+        registro = RegistroAlertaStock.objects.get()
+        self.assertTrue(registro.enviado)
+        self.assertEqual(registro.stock_actual, 5)

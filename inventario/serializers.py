@@ -3,8 +3,9 @@ from rest_framework import serializers
 
 from documentacion.services.r2_storage import generate_signed_url
 
-from .models import ComprobanteEntregaInventario, MovimientoInventario, PrendaInventario
+from .models import ConfiguracionAlertaStock, ComprobanteEntregaInventario, MovimientoInventario, PrendaInventario
 from .services.codigos import generar_codigo_barra, generar_codigo_qr, normalizar_texto
+from .services.stock_alertas import alcanzo_stock_critico, enviar_alerta_stock
 
 
 class PrendaInventarioSerializer(serializers.ModelSerializer):
@@ -207,13 +208,24 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
             prenda.stock_actual = stock_despues
             prenda.save(update_fields=["stock_actual", "actualizado_en"])
 
-            return MovimientoInventario.objects.create(
+            movimiento = MovimientoInventario.objects.create(
                 **validated_data,
                 stock_antes=stock_antes,
                 stock_despues=stock_despues,
                 estado_envio=estado_envio,
                 usuario_registro=request.user if request else None,
             )
+            if (
+                tipo == MovimientoInventario.TIPO_ENTREGA
+                and alcanzo_stock_critico(stock_antes, stock_despues, prenda.stock_critico)
+            ):
+                transaction.on_commit(lambda: enviar_alerta_stock(
+                    prenda.id,
+                    stock_despues,
+                    prenda.stock_critico,
+                    movimiento.id,
+                ))
+            return movimiento
 
 
 class ComprobanteEntregaInventarioSerializer(serializers.ModelSerializer):
@@ -262,3 +274,19 @@ class ComprobanteEntregaInventarioSerializer(serializers.ModelSerializer):
         if not obj.supervisor:
             return None
         return f"{obj.supervisor.nombres} {obj.supervisor.apellidos}"
+
+
+class ConfiguracionAlertaStockSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConfiguracionAlertaStock
+        fields = ("email_1", "email_2", "actualizado_en")
+        read_only_fields = ("actualizado_en",)
+
+    def validate(self, attrs):
+        email_1 = str(attrs.get("email_1", getattr(self.instance, "email_1", "")) or "").strip().lower()
+        email_2 = str(attrs.get("email_2", getattr(self.instance, "email_2", "")) or "").strip().lower()
+        if email_1 and email_2 and email_1 == email_2:
+            raise serializers.ValidationError({"email_2": "Los correos destinatarios deben ser diferentes."})
+        attrs["email_1"] = email_1
+        attrs["email_2"] = email_2
+        return attrs

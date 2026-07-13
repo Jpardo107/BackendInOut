@@ -3,8 +3,10 @@ from django.contrib import admin
 from .models import (
     AutorizacionEntregaInventario,
     ComprobanteEntregaInventario,
+    ConfiguracionAlertaStock,
     MovimientoInventario,
     PrendaInventario,
+    RegistroAlertaStock,
 )
 
 
@@ -93,3 +95,7 @@ class AutorizacionEntregaInventarioAdmin(admin.ModelAdmin):
         "usuario__cargo__nombre",
     )
     readonly_fields = ("creado_en", "actualizado_en")
+
+
+admin.site.register(ConfiguracionAlertaStock)
+admin.site.register(RegistroAlertaStock)

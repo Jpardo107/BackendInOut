@@ -137,6 +137,17 @@ REPORTES_IMAGE_MAX_SIZE = int(os.getenv("REPORTES_IMAGE_MAX_SIZE", 10 * 1024 * 1
 REPORTES_IMPORT_MAX_SIZE = int(os.getenv("REPORTES_IMPORT_MAX_SIZE", 20 * 1024 * 1024))
 AMONESTACIONES_DOCUMENT_MAX_SIZE = int(os.getenv("AMONESTACIONES_DOCUMENT_MAX_SIZE", 20 * 1024 * 1024))
 
+# Correo SMTP para alertas de inventario
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() in ("1", "true", "yes")
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").lower() in ("1", "true", "yes")
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "alertas@inout.cl")
+
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 

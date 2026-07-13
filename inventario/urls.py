@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AutorizadosEntregaInventarioView,
     ComprobanteEntregaInventarioViewSet,
+    ConfiguracionAlertaStockView,
     MovimientoInventarioViewSet,
     PrendaInventarioViewSet,
 )
@@ -15,5 +16,6 @@ router.register(r"comprobantes-entrega", ComprobanteEntregaInventarioViewSet, ba
 
 urlpatterns = [
     path("autorizados-entrega/", AutorizadosEntregaInventarioView.as_view(), name="inventario-autorizados-entrega"),
+    path("configuracion-alertas-stock/", ConfiguracionAlertaStockView.as_view(), name="inventario-configuracion-alertas-stock"),
     path("", include(router.urls)),
 ]
