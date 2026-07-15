@@ -28,6 +28,7 @@ from .models import (
     comprobante_entrega_upload_key,
 )
 from .permissions import IsInventarioRole
+from .services.codigos import normalizar_texto
 from .serializers import (
     ConfiguracionAlertaStockSerializer,
     ComprobanteEntregaInventarioSerializer,
@@ -160,6 +161,40 @@ class PrendaInventarioViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(stock_actual__lte=models.F("stock_critico"))
 
         return queryset
+
+    def _validate_inventory_delete_permission(self):
+        if not user_has_inventory_admin_role(self.request.user):
+            raise PermissionDenied("Solo RRHH o administración puede eliminar artículos del catálogo.")
+
+    @action(detail=True, methods=["post"], url_path="eliminar-configuracion")
+    def eliminar_configuracion(self, request, pk=None):
+        self._validate_inventory_delete_permission()
+        prenda = self.get_object()
+        if prenda.movimientos.filter(tipo=MovimientoInventario.TIPO_ENTREGA).exists():
+            raise ValidationError({"detail": "No se puede eliminar esta talla/variante porque tiene entregas asociadas."})
+        prenda.activo = False
+        prenda.save(update_fields=["activo", "actualizado_en"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=["post"], url_path="eliminar-articulo")
+    def eliminar_articulo(self, request):
+        self._validate_inventory_delete_permission()
+        categoria = request.data.get("categoria")
+        nombre = str(request.data.get("nombre_prenda") or "").strip()
+        configuraciones = PrendaInventario.objects.filter(
+            categoria=categoria,
+            nombre_normalizado=normalizar_texto(nombre),
+            activo=True,
+        )
+        if not configuraciones.exists():
+            raise NotFound("El artículo seleccionado ya no está activo.")
+        if MovimientoInventario.objects.filter(
+            prenda__in=configuraciones,
+            tipo=MovimientoInventario.TIPO_ENTREGA,
+        ).exists():
+            raise ValidationError({"detail": "No se puede eliminar el artículo porque una de sus tallas/variantes tiene entregas asociadas."})
+        configuraciones.update(activo=False, actualizado_en=timezone.now())
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["get"], url_path="buscar-codigo")
     def buscar_codigo(self, request):

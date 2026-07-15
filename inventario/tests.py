@@ -81,6 +81,28 @@ class PrendaInventarioTests(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data["id"], prenda.id)
 
+    def test_elimina_configuracion_sin_entregas(self):
+        prenda = PrendaInventario.objects.create(nombre_prenda="CHAQUETA", talla_prenda="M")
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.post(f"/api/inventario/prendas/{prenda.id}/eliminar-configuracion/")
+        self.assertEqual(response.status_code, 204)
+        prenda.refresh_from_db()
+        self.assertFalse(prenda.activo)
+
+    def test_no_elimina_configuracion_con_entregas(self):
+        prenda = PrendaInventario.objects.create(nombre_prenda="CHAQUETA", talla_prenda="L", stock_actual=2)
+        MovimientoInventario.objects.create(
+            prenda=prenda, tipo=MovimientoInventario.TIPO_ENTREGA, cantidad=1,
+            stock_antes=2, stock_despues=1, observacion="Operaciones",
+        )
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.post(f"/api/inventario/prendas/{prenda.id}/eliminar-configuracion/")
+        self.assertEqual(response.status_code, 400)
+        prenda.refresh_from_db()
+        self.assertTrue(prenda.activo)
+
 
 class MovimientoInventarioTests(TestCase):
     def setUp(self):

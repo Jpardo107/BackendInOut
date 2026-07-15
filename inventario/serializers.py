@@ -35,6 +35,14 @@ class PrendaInventarioSerializer(serializers.ModelSerializer):
         talla_prenda = attrs.get("talla_prenda", getattr(self.instance, "talla_prenda", ""))
         categoria = attrs.get("categoria", getattr(self.instance, "categoria", PrendaInventario.CATEGORIA_VESTUARIO))
 
+        if (
+            self.instance
+            and self.instance.activo
+            and attrs.get("activo") is False
+            and self.instance.movimientos.filter(tipo=MovimientoInventario.TIPO_ENTREGA).exists()
+        ):
+            raise serializers.ValidationError({"detail": "No se puede eliminar esta configuración porque tiene entregas asociadas."})
+
         if not str(nombre_prenda).strip():
             raise serializers.ValidationError({"nombre_prenda": "El nombre de la prenda es obligatorio."})
 
