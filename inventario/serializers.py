@@ -15,6 +15,7 @@ class PrendaInventarioSerializer(serializers.ModelSerializer):
         model = PrendaInventario
         fields = [
             "id",
+            "categoria",
             "nombre_prenda",
             "talla_prenda",
             "cantidad_prenda",
@@ -32,6 +33,7 @@ class PrendaInventarioSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         nombre_prenda = attrs.get("nombre_prenda", getattr(self.instance, "nombre_prenda", ""))
         talla_prenda = attrs.get("talla_prenda", getattr(self.instance, "talla_prenda", ""))
+        categoria = attrs.get("categoria", getattr(self.instance, "categoria", PrendaInventario.CATEGORIA_VESTUARIO))
 
         if not str(nombre_prenda).strip():
             raise serializers.ValidationError({"nombre_prenda": "El nombre de la prenda es obligatorio."})
@@ -42,6 +44,7 @@ class PrendaInventarioSerializer(serializers.ModelSerializer):
         nombre_normalizado = normalizar_texto(nombre_prenda)
         talla_normalizada = normalizar_texto(talla_prenda)
         queryset = PrendaInventario.objects.filter(
+            categoria=categoria,
             nombre_normalizado=nombre_normalizado,
             talla_normalizada=talla_normalizada,
         )
@@ -51,14 +54,19 @@ class PrendaInventarioSerializer(serializers.ModelSerializer):
 
         if queryset.exists():
             raise serializers.ValidationError(
-                {"detail": "Ya existe una prenda con ese nombre y talla."}
+                {"detail": "Ya existe un artículo de esa categoría con ese nombre y talla/identificador."}
             )
 
         return attrs
 
     def create(self, validated_data):
+        nombre_codigo = (
+            f"CARGO FIJO {validated_data['nombre_prenda']}"
+            if validated_data.get("categoria") == PrendaInventario.CATEGORIA_CARGO_FIJO
+            else validated_data["nombre_prenda"]
+        )
         codigo_barra = generar_codigo_barra(
-            validated_data["nombre_prenda"],
+            nombre_codigo,
             validated_data["talla_prenda"],
         )
         validated_data["codigo_barra"] = codigo_barra

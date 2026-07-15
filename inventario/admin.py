@@ -13,6 +13,7 @@ from .models import (
 @admin.register(PrendaInventario)
 class PrendaInventarioAdmin(admin.ModelAdmin):
     list_display = (
+        "categoria",
         "nombre_prenda",
         "talla_prenda",
         "stock_actual",
@@ -21,7 +22,7 @@ class PrendaInventarioAdmin(admin.ModelAdmin):
         "codigo_barra",
         "activo",
     )
-    list_filter = ("activo",)
+    list_filter = ("categoria", "activo")
     search_fields = ("nombre_prenda", "talla_prenda", "codigo_barra", "codigo_qr")
     readonly_fields = (
         "nombre_normalizado",

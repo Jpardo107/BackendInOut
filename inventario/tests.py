@@ -57,6 +57,15 @@ class PrendaInventarioTests(TestCase):
         self.assertEqual(prenda.codigo_barra, "INV-PANTALON-HOMBRE-44")
         self.assertEqual(prenda.codigo_qr, "inout://inventario/prenda/INV-PANTALON-HOMBRE-44")
 
+    def test_permite_mismo_nombre_en_categorias_distintas(self):
+        PrendaInventario.objects.create(nombre_prenda="RADIO", talla_prenda="UNICA")
+        serializer = PrendaInventarioSerializer(data={
+            "categoria": PrendaInventario.CATEGORIA_CARGO_FIJO,
+            "nombre_prenda": "RADIO",
+            "talla_prenda": "UNICA",
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
     def test_buscar_codigo_resuelve_barra_qr_y_segmento_final(self):
         prenda = PrendaInventario.objects.create(
             nombre_prenda="Pantalon Hombre",

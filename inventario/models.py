@@ -9,6 +9,19 @@ from .services.codigos import generar_codigo_barra, generar_codigo_qr, normaliza
 
 
 class PrendaInventario(models.Model):
+    CATEGORIA_VESTUARIO = "vestuario_equipo"
+    CATEGORIA_CARGO_FIJO = "cargo_fijo"
+    CATEGORIA_CHOICES = [
+        (CATEGORIA_VESTUARIO, "Vestuario y equipo"),
+        (CATEGORIA_CARGO_FIJO, "Cargo fijo"),
+    ]
+
+    categoria = models.CharField(
+        max_length=30,
+        choices=CATEGORIA_CHOICES,
+        default=CATEGORIA_VESTUARIO,
+        db_index=True,
+    )
     nombre_prenda = models.CharField(max_length=120)
     nombre_normalizado = models.CharField(max_length=120, editable=False)
     talla_prenda = models.CharField(max_length=40)
@@ -26,8 +39,8 @@ class PrendaInventario(models.Model):
         ordering = ["nombre_normalizado", "talla_normalizada"]
         constraints = [
             models.UniqueConstraint(
-                fields=["nombre_normalizado", "talla_normalizada"],
-                name="unique_prenda_talla_normalizada",
+                fields=["categoria", "nombre_normalizado", "talla_normalizada"],
+                name="unique_categoria_prenda_talla_normalizada",
             ),
             models.CheckConstraint(
                 check=models.Q(stock_actual__gte=0),
@@ -35,7 +48,7 @@ class PrendaInventario(models.Model):
             ),
         ]
         indexes = [
-            models.Index(fields=["nombre_normalizado", "talla_normalizada"]),
+            models.Index(fields=["categoria", "nombre_normalizado", "talla_normalizada"], name="inventario_categori_30ca1b_idx"),
             models.Index(fields=["stock_actual"]),
         ]
 
@@ -46,7 +59,12 @@ class PrendaInventario(models.Model):
     def save(self, *args, **kwargs):
         self.nombre_normalizado = normalizar_texto(self.nombre_prenda)
         self.talla_normalizada = normalizar_texto(self.talla_prenda)
-        self.codigo_barra = generar_codigo_barra(self.nombre_prenda, self.talla_prenda)
+        nombre_codigo = (
+            f"CARGO FIJO {self.nombre_prenda}"
+            if self.categoria == self.CATEGORIA_CARGO_FIJO
+            else self.nombre_prenda
+        )
+        self.codigo_barra = generar_codigo_barra(nombre_codigo, self.talla_prenda)
         self.codigo_qr = generar_codigo_qr(self.codigo_barra)
         super().save(*args, **kwargs)
 
