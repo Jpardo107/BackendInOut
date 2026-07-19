@@ -107,6 +107,27 @@ class ReporteTextosUpdateTests(TestCase):
         self.assertEqual(self.reporte.analisis_final_usuario, "")
         self.assertEqual(self.imagen.recomendacion_usuario, "")
 
+    @patch("reportes.views._schedule_vulnerabilidades_ai")
+    def test_vulnerabilidades_sin_ia_se_guarda_como_borrador(self, schedule_mock):
+        response = self.client.post(
+            "/api/reportes-informes/",
+            {
+                "tipoReporte": "reporte-vulnerabilidades",
+                "instalacionSeleccionada": str(self.instalacion.id),
+                "descripcionHechos": "Vulnerabilidad detectada",
+                "recomendaciones": "Recomendación del supervisor",
+                "fechaEmision": "2026-07-19",
+                "generarIA": "false",
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        reporte = ReporteInforme.objects.get(id=response.data["id"])
+        self.assertEqual(reporte.tipo_reporte, ReporteInforme.TIPO_VULNERABILIDADES)
+        self.assertEqual(reporte.estado, ReporteInforme.ESTADO_BORRADOR)
+        schedule_mock.assert_not_called()
+
     @patch("reportes.views.delete_document")
     def test_elimina_reporte_imagenes_y_archivos_almacenados(self, delete_document_mock):
         response = self.client.delete(f"/api/reportes-informes/{self.reporte.id}/")

@@ -583,7 +583,8 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
                     status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
-        if reporte.tipo_reporte == ReporteInforme.TIPO_VULNERABILIDADES:
+        generar_ia = _parse_bool(_first(request.data, "generar_ia", "generarIA", default=True))
+        if reporte.tipo_reporte == ReporteInforme.TIPO_VULNERABILIDADES and generar_ia:
             _schedule_vulnerabilidades_ai(reporte)
 
         try:
