@@ -1,8 +1,10 @@
+from django import forms
 from django.test import TestCase
 from rest_framework.test import APIClient
 
 from user.models import Cargo, Usuario
 from .models import Instalacion, Zona
+from .admin import InstalacionAdminForm
 
 
 class ZonaApiTests(TestCase):
@@ -57,3 +59,11 @@ class ZonaApiTests(TestCase):
         response = self.client.post("/api/instalaciones/", payload, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertIn("zona", response.data)
+
+    def test_admin_muestra_catalogo_de_zonas_como_dropdown(self):
+        Zona.objects.create(codigo="costa", nombre="Costa")
+        form = InstalacionAdminForm()
+        choices = dict(form.fields["zona"].choices)
+        self.assertEqual(choices["centro"], "Centro")
+        self.assertEqual(choices["costa"], "Costa")
+        self.assertIsInstance(form.fields["zona"].widget, forms.Select)
