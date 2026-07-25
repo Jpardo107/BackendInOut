@@ -1,6 +1,8 @@
 from django.test import TestCase
 
+from instalacion.models import Instalacion, Zona
 from .models import PersonalEmpresa
+from .serializers import PersonalEmpresaSerializer
 from .services.rut import formatear_rut, normalizar_rut
 
 
@@ -24,3 +26,32 @@ class PersonalEmpresaTests(TestCase):
         )
 
         self.assertTrue(PersonalEmpresa.objects.filter(rut="189356870").exists())
+
+    def test_persona_nueva_exige_instalacion(self):
+        serializer = PersonalEmpresaSerializer(data={
+            "rut": "18.935.687-0",
+            "nombre_completo": "Persona Nueva",
+        })
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("instalacion", serializer.errors)
+
+    def test_persona_nueva_toma_ubicacion_desde_instalacion(self):
+        Zona.objects.get_or_create(codigo="centro", defaults={"nombre": "Centro"})
+        instalacion = Instalacion.objects.create(
+            nombre="Edificio Central",
+            direccion="Calle 1",
+            comuna="Santiago",
+            nombre_contacto="Contacto",
+            correo_contacto="contacto@example.com",
+            telefono_contacto="123",
+            zona="centro",
+        )
+        serializer = PersonalEmpresaSerializer(data={
+            "rut": "18.935.687-0",
+            "nombre_completo": "Persona Nueva",
+            "instalacion": instalacion.id,
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        persona = serializer.save()
+        self.assertEqual(persona.instalacion, instalacion)
+        self.assertEqual(persona.ubicacion, "EDIFICIO CENTRAL")

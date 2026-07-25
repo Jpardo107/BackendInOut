@@ -31,6 +31,7 @@ class SupervisorSerializer(serializers.ModelSerializer):
 
 class PersonalEmpresaSerializer(serializers.ModelSerializer):
     rut_formateado = serializers.SerializerMethodField()
+    instalacion_nombre = serializers.CharField(source='instalacion.nombre', read_only=True)
 
     class Meta:
         model = PersonalEmpresa
@@ -40,11 +41,13 @@ class PersonalEmpresaSerializer(serializers.ModelSerializer):
             'rut_formateado',
             'nombre_completo',
             'ubicacion',
+            'instalacion',
+            'instalacion_nombre',
             'activo',
             'creado_en',
             'actualizado_en',
         ]
-        read_only_fields = ['id', 'rut_formateado', 'creado_en', 'actualizado_en']
+        read_only_fields = ['id', 'rut_formateado', 'instalacion_nombre', 'creado_en', 'actualizado_en']
 
     def get_rut_formateado(self, obj):
         return formatear_rut(obj.rut)
@@ -63,3 +66,14 @@ class PersonalEmpresaSerializer(serializers.ModelSerializer):
 
     def validate_ubicacion(self, value):
         return " ".join(str(value or "").split()).upper()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        instalacion = attrs.get("instalacion")
+        if self.instance is None and not instalacion:
+            raise serializers.ValidationError({
+                "instalacion": "Debes seleccionar una instalación."
+            })
+        if instalacion:
+            attrs["ubicacion"] = instalacion.nombre.strip().upper()
+        return attrs

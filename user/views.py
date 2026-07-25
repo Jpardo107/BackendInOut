@@ -2,7 +2,7 @@ from django.db import models
 from django.db.models import Count
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -29,10 +29,10 @@ class SupervisorListView(generics.ListAPIView):
 class PersonalEmpresaViewSet(viewsets.ModelViewSet):
     serializer_class = PersonalEmpresaSerializer
     permission_classes = [permissions.IsAuthenticated]
-    parser_classes = [MultiPartParser]
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
 
     def get_queryset(self):
-        queryset = PersonalEmpresa.objects.all()
+        queryset = PersonalEmpresa.objects.select_related("instalacion")
         search = self.request.query_params.get("search", "").strip()
         ubicacion = self.request.query_params.get("ubicacion", "").strip()
         activo = self.request.query_params.get("activo")

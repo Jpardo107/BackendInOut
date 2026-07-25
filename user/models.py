@@ -51,6 +51,13 @@ class PersonalEmpresa(models.Model):
     rut = models.CharField(max_length=12, unique=True, db_index=True)
     nombre_completo = models.CharField(max_length=220)
     ubicacion = models.CharField(max_length=160, blank=True)
+    instalacion = models.ForeignKey(
+        "instalacion.Instalacion",
+        on_delete=models.PROTECT,
+        related_name="personal",
+        null=True,
+        blank=True,
+    )
     activo = models.BooleanField(default=True)
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)
