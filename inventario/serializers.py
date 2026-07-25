@@ -68,9 +68,14 @@ class PrendaInventarioSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        prefijos = {
+            PrendaInventario.CATEGORIA_CARGO_FIJO: "CARGO FIJO",
+            PrendaInventario.CATEGORIA_UTILES_ASEO: "UTILES ASEO",
+        }
+        categoria = validated_data.get("categoria")
         nombre_codigo = (
-            f"CARGO FIJO {validated_data['nombre_prenda']}"
-            if validated_data.get("categoria") == PrendaInventario.CATEGORIA_CARGO_FIJO
+            f"{prefijos[categoria]} {validated_data['nombre_prenda']}"
+            if categoria in prefijos
             else validated_data["nombre_prenda"]
         )
         codigo_barra = generar_codigo_barra(

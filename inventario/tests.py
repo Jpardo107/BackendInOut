@@ -66,6 +66,16 @@ class PrendaInventarioTests(TestCase):
         })
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
+    def test_permite_crear_util_de_aseo(self):
+        serializer = PrendaInventarioSerializer(data={
+            "categoria": PrendaInventario.CATEGORIA_UTILES_ASEO,
+            "nombre_prenda": "DETERGENTE",
+            "talla_prenda": "1 LITRO",
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        articulo = serializer.save()
+        self.assertEqual(articulo.codigo_barra, "INV-UTILES-ASEO-DETERGENTE-1-LITRO")
+
     def test_buscar_codigo_resuelve_barra_qr_y_segmento_final(self):
         prenda = PrendaInventario.objects.create(
             nombre_prenda="Pantalon Hombre",

@@ -11,9 +11,11 @@ from .services.codigos import generar_codigo_barra, generar_codigo_qr, normaliza
 class PrendaInventario(models.Model):
     CATEGORIA_VESTUARIO = "vestuario_equipo"
     CATEGORIA_CARGO_FIJO = "cargo_fijo"
+    CATEGORIA_UTILES_ASEO = "utiles_aseo"
     CATEGORIA_CHOICES = [
         (CATEGORIA_VESTUARIO, "Vestuario y equipo"),
         (CATEGORIA_CARGO_FIJO, "Cargo fijo"),
+        (CATEGORIA_UTILES_ASEO, "Útiles de aseo"),
     ]
 
     categoria = models.CharField(
@@ -59,11 +61,11 @@ class PrendaInventario(models.Model):
     def save(self, *args, **kwargs):
         self.nombre_normalizado = normalizar_texto(self.nombre_prenda)
         self.talla_normalizada = normalizar_texto(self.talla_prenda)
-        nombre_codigo = (
-            f"CARGO FIJO {self.nombre_prenda}"
-            if self.categoria == self.CATEGORIA_CARGO_FIJO
-            else self.nombre_prenda
-        )
+        prefijos = {
+            self.CATEGORIA_CARGO_FIJO: "CARGO FIJO",
+            self.CATEGORIA_UTILES_ASEO: "UTILES ASEO",
+        }
+        nombre_codigo = f"{prefijos[self.categoria]} {self.nombre_prenda}" if self.categoria in prefijos else self.nombre_prenda
         self.codigo_barra = generar_codigo_barra(nombre_codigo, self.talla_prenda)
         self.codigo_qr = generar_codigo_qr(self.codigo_barra)
         super().save(*args, **kwargs)
