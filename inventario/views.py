@@ -162,6 +162,23 @@ class PrendaInventarioViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    def perform_update(self, serializer):
+        prenda = self.get_object()
+        stock_antes = prenda.stock_actual
+        with transaction.atomic():
+            actualizada = serializer.save()
+            stock_despues = actualizada.stock_actual
+            if stock_antes != stock_despues:
+                MovimientoInventario.objects.create(
+                    prenda=actualizada,
+                    tipo=MovimientoInventario.TIPO_AJUSTE,
+                    cantidad=abs(stock_despues - stock_antes),
+                    stock_antes=stock_antes,
+                    stock_despues=stock_despues,
+                    usuario_registro=self.request.user,
+                    observacion="Ajuste manual por corrección de inventario.",
+                )
+
     def _validate_inventory_delete_permission(self):
         if not user_has_inventory_admin_role(self.request.user):
             raise PermissionDenied("Solo RRHH o administración puede eliminar artículos del catálogo.")

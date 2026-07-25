@@ -76,6 +76,29 @@ class PrendaInventarioTests(TestCase):
         articulo = serializer.save()
         self.assertEqual(articulo.codigo_barra, "INV-UTILES-ASEO-DETERGENTE-1-LITRO")
 
+    def test_editar_stock_registra_movimiento_de_ajuste(self):
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="DETERGENTE",
+            talla_prenda="1 LITRO",
+            stock_actual=10,
+            cantidad_prenda=10,
+        )
+        client = APIClient()
+        client.force_authenticate(user=self.admin_user)
+        response = client.patch(
+            f"/api/inventario/prendas/{prenda.id}/",
+            {"stock_actual": 7},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        ajuste = MovimientoInventario.objects.get(
+            prenda=prenda,
+            tipo=MovimientoInventario.TIPO_AJUSTE,
+        )
+        self.assertEqual(ajuste.cantidad, 3)
+        self.assertEqual(ajuste.stock_antes, 10)
+        self.assertEqual(ajuste.stock_despues, 7)
+
     def test_buscar_codigo_resuelve_barra_qr_y_segmento_final(self):
         prenda = PrendaInventario.objects.create(
             nombre_prenda="Pantalon Hombre",
