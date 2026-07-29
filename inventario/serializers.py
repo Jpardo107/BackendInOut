@@ -220,7 +220,12 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
                         {"cantidad": "No hay stock suficiente para registrar la entrega."}
                     )
                 stock_despues = stock_antes - cantidad
-                estado_envio = MovimientoInventario.ESTADO_EN_TRANSITO
+                observacion = (validated_data.get("observacion") or "").strip().lower()
+                estado_envio = (
+                    MovimientoInventario.ESTADO_RECIBIDO
+                    if observacion == "entrega directa a solicitante"
+                    else MovimientoInventario.ESTADO_EN_TRANSITO
+                )
             elif tipo in (MovimientoInventario.TIPO_INGRESO, MovimientoInventario.TIPO_RECEPCION):
                 stock_despues = stock_antes + cantidad
             else:

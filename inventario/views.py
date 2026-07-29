@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
@@ -260,6 +260,9 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
         prenda_id = self.request.query_params.get("prenda")
         estado_envio = self.request.query_params.get("estado_envio")
         usuario_final = self.request.query_params.get("usuario_final")
+        mes = str(self.request.query_params.get("mes") or "").strip()
+        fecha_desde = parse_date(str(self.request.query_params.get("fecha_desde") or "").strip())
+        fecha_hasta = parse_date(str(self.request.query_params.get("fecha_hasta") or "").strip())
 
         if tipo:
             queryset = queryset.filter(tipo=tipo)
@@ -275,6 +278,34 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(usuario_final=self.request.user)
             else:
                 queryset = queryset.filter(usuario_final_id=usuario_final)
+
+        if mes:
+            try:
+                year, month = (int(part) for part in mes.split("-", 1))
+                month_start = datetime(year, month, 1)
+                next_month = (
+                    datetime(year + 1, 1, 1)
+                    if month == 12
+                    else datetime(year, month + 1, 1)
+                )
+                current_tz = timezone.get_current_timezone()
+                queryset = queryset.filter(
+                    creado_en__gte=timezone.make_aware(month_start, current_tz),
+                    creado_en__lt=timezone.make_aware(next_month, current_tz),
+                )
+            except (TypeError, ValueError):
+                raise ValidationError({"mes": "Usa el formato AAAA-MM."})
+
+        current_tz = timezone.get_current_timezone()
+        if fecha_desde:
+            desde = timezone.make_aware(datetime.combine(fecha_desde, time.min), current_tz)
+            queryset = queryset.filter(creado_en__gte=desde)
+        if fecha_hasta:
+            hasta = timezone.make_aware(
+                datetime.combine(fecha_hasta + timedelta(days=1), time.min),
+                current_tz,
+            )
+            queryset = queryset.filter(creado_en__lt=hasta)
 
         return queryset
 

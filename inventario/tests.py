@@ -1,6 +1,9 @@
+from datetime import datetime
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core import mail
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from unittest.mock import patch
 
 from rest_framework.test import APIClient
@@ -236,7 +239,7 @@ class MovimientoInventarioTests(TestCase):
 
         self.assertIsNone(movimiento.usuario_final)
         self.assertEqual(movimiento.destinatario_personal, self.destinatario)
-        self.assertEqual(movimiento.estado_envio, MovimientoInventario.ESTADO_EN_TRANSITO)
+        self.assertEqual(movimiento.estado_envio, MovimientoInventario.ESTADO_RECIBIDO)
         self.assertEqual(prenda.stock_actual, 4)
 
     def test_entrega_multiple_descuenta_todos_los_items(self):
@@ -268,6 +271,10 @@ class MovimientoInventarioTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(response.data), 2)
+        self.assertTrue(all(
+            item["estado_envio"] == MovimientoInventario.ESTADO_RECIBIDO
+            for item in response.data
+        ))
         primera.refresh_from_db()
         segunda.refresh_from_db()
         self.assertEqual(primera.stock_actual, 3)
@@ -306,6 +313,47 @@ class MovimientoInventarioTests(TestCase):
         self.assertEqual(primera.stock_actual, 5)
         self.assertEqual(segunda.stock_actual, 1)
         self.assertFalse(MovimientoInventario.objects.filter(tipo="entrega").exists())
+
+    def test_listado_de_movimientos_filtra_por_mes_en_backend(self):
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="CAMISA",
+            talla_prenda="M",
+            stock_actual=10,
+        )
+        julio = MovimientoInventario.objects.create(
+            prenda=prenda,
+            tipo=MovimientoInventario.TIPO_ENTREGA,
+            cantidad=1,
+            stock_antes=10,
+            stock_despues=9,
+            destinatario_personal=self.destinatario,
+            observacion="Entrega directa a solicitante",
+            estado_envio=MovimientoInventario.ESTADO_RECIBIDO,
+        )
+        agosto = MovimientoInventario.objects.create(
+            prenda=prenda,
+            tipo=MovimientoInventario.TIPO_ENTREGA,
+            cantidad=1,
+            stock_antes=9,
+            stock_despues=8,
+            destinatario_personal=self.destinatario,
+            observacion="Entrega directa a solicitante",
+            estado_envio=MovimientoInventario.ESTADO_RECIBIDO,
+        )
+        MovimientoInventario.objects.filter(pk=julio.pk).update(
+            creado_en=timezone.make_aware(datetime(2026, 7, 15, 12, 0))
+        )
+        MovimientoInventario.objects.filter(pk=agosto.pk).update(
+            creado_en=timezone.make_aware(datetime(2026, 8, 15, 12, 0))
+        )
+        client = APIClient()
+        client.force_authenticate(user=self.usuario_rrhh)
+
+        response = client.get("/api/inventario/movimientos/?mes=2026-07")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.data["results"] if isinstance(response.data, dict) else response.data
+        self.assertEqual([item["id"] for item in data], [julio.id])
 
     def test_entrega_recibida_no_modifica_stock(self):
         cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
