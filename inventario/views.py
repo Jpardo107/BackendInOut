@@ -278,6 +278,61 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    @action(detail=False, methods=["post"], url_path="entrega-multiple")
+    def entrega_multiple(self, request):
+        if not user_can_deliver_inventory(request.user):
+            raise PermissionDenied("No estás autorizado para entregar inventario.")
+
+        destinatario_id = request.data.get("destinatario_personal")
+        usuario_final = request.data.get("usuario_final")
+        entrega_directa = bool(request.data.get("entrega_directa"))
+        operaciones = bool(request.data.get("operaciones"))
+        items = request.data.get("items")
+
+        try:
+            destinatario = PersonalEmpresa.objects.get(pk=destinatario_id, activo=True)
+        except (PersonalEmpresa.DoesNotExist, TypeError, ValueError):
+            raise ValidationError({"destinatario_personal": "Selecciona una persona activa."})
+
+        if not isinstance(items, list) or not items:
+            raise ValidationError({"items": "Agrega al menos un artículo a la entrega."})
+        if len(items) > 50:
+            raise ValidationError({"items": "Una entrega admite como máximo 50 artículos."})
+        if sum(bool(value) for value in (entrega_directa, operaciones, usuario_final)) != 1:
+            raise ValidationError(
+                {"receptor": "Selecciona entrega directa, Operaciones o un supervisor."}
+            )
+
+        observacion = (
+            "Entrega directa a solicitante"
+            if entrega_directa
+            else "Operaciones" if operaciones else ""
+        )
+        movimientos = []
+
+        with transaction.atomic():
+            for index, item in enumerate(items):
+                if not isinstance(item, dict):
+                    raise ValidationError({"items": f"El artículo {index + 1} no es válido."})
+                payload = {
+                    "prenda": item.get("prenda"),
+                    "tipo": MovimientoInventario.TIPO_ENTREGA,
+                    "cantidad": item.get("cantidad"),
+                    "destinatario_personal": destinatario.pk,
+                    "observacion": observacion,
+                }
+                if usuario_final:
+                    payload["usuario_final"] = usuario_final
+
+                serializer = self.get_serializer(data=payload)
+                serializer.is_valid(raise_exception=True)
+                movimientos.append(serializer.save())
+
+        return Response(
+            self.get_serializer(movimientos, many=True).data,
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=False, methods=["post"], url_path="registro-manual")
     def registro_manual(self, request):
         if not user_has_inventory_admin_role(request.user):
@@ -642,7 +697,6 @@ class ConfiguracionAlertaStockView(APIView):
 
     def get(self, request):
         data = ConfiguracionAlertaStockSerializer(self.get_object()).data
-        data["diagnostico_correo"] = get_email_delivery_diagnostics()
         ultimo = RegistroAlertaStock.objects.select_related("prenda").first()
         data["ultimo_intento"] = (
             {
@@ -682,7 +736,6 @@ class ConfiguracionAlertaStockView(APIView):
             return Response(
                 {
                     "detail": " ".join(diagnostico["errores"]),
-                    "diagnostico_correo": diagnostico,
                 },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
@@ -717,5 +770,4 @@ class ConfiguracionAlertaStockView(APIView):
         return Response({
             "detail": "El servidor SMTP aceptó el correo de prueba.",
             "destinatarios": destinatarios,
-            "diagnostico_correo": diagnostico,
         })

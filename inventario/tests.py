@@ -140,6 +140,16 @@ class PrendaInventarioTests(TestCase):
 class MovimientoInventarioTests(TestCase):
     def setUp(self):
         cargo = Cargo.objects.create(nombre="Guardia")
+        cargo_rrhh = Cargo.objects.create(nombre="Encargado RRHH")
+        self.usuario_rrhh = Usuario.objects.create_user(
+            username="rrhh.movimientos",
+            password="test-pass",
+            nombres="RRHH",
+            apellidos="Movimientos",
+            rut="22222222-2",
+            email="rrhh.movimientos@example.com",
+            cargo=cargo_rrhh,
+        )
         self.usuario_final = Usuario.objects.create_user(
             username="guardia.test",
             password="test-pass",
@@ -228,6 +238,74 @@ class MovimientoInventarioTests(TestCase):
         self.assertEqual(movimiento.destinatario_personal, self.destinatario)
         self.assertEqual(movimiento.estado_envio, MovimientoInventario.ESTADO_EN_TRANSITO)
         self.assertEqual(prenda.stock_actual, 4)
+
+    def test_entrega_multiple_descuenta_todos_los_items(self):
+        segunda = PrendaInventario.objects.create(
+            nombre_prenda="POLAR",
+            talla_prenda="L",
+            stock_actual=4,
+        )
+        primera = PrendaInventario.objects.create(
+            nombre_prenda="POLAR",
+            talla_prenda="M",
+            stock_actual=5,
+        )
+        client = APIClient()
+        client.force_authenticate(user=self.usuario_rrhh)
+
+        response = client.post(
+            "/api/inventario/movimientos/entrega-multiple/",
+            {
+                "destinatario_personal": self.destinatario.id,
+                "entrega_directa": True,
+                "items": [
+                    {"prenda": primera.id, "cantidad": 2},
+                    {"prenda": segunda.id, "cantidad": 1},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.data), 2)
+        primera.refresh_from_db()
+        segunda.refresh_from_db()
+        self.assertEqual(primera.stock_actual, 3)
+        self.assertEqual(segunda.stock_actual, 3)
+
+    def test_entrega_multiple_es_atomica_si_un_item_no_tiene_stock(self):
+        primera = PrendaInventario.objects.create(
+            nombre_prenda="POLAR",
+            talla_prenda="M",
+            stock_actual=5,
+        )
+        segunda = PrendaInventario.objects.create(
+            nombre_prenda="POLAR",
+            talla_prenda="L",
+            stock_actual=1,
+        )
+        client = APIClient()
+        client.force_authenticate(user=self.usuario_rrhh)
+
+        response = client.post(
+            "/api/inventario/movimientos/entrega-multiple/",
+            {
+                "destinatario_personal": self.destinatario.id,
+                "entrega_directa": True,
+                "items": [
+                    {"prenda": primera.id, "cantidad": 2},
+                    {"prenda": segunda.id, "cantidad": 2},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        primera.refresh_from_db()
+        segunda.refresh_from_db()
+        self.assertEqual(primera.stock_actual, 5)
+        self.assertEqual(segunda.stock_actual, 1)
+        self.assertFalse(MovimientoInventario.objects.filter(tipo="entrega").exists())
 
     def test_entrega_recibida_no_modifica_stock(self):
         cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
@@ -769,7 +847,7 @@ class MovimientoInventarioTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["destinatarios"], ["compras@inout.cl"])
-        self.assertTrue(response.data["diagnostico_correo"]["entrega_real"])
+        self.assertNotIn("diagnostico_correo", response.data)
         send_mock.assert_called_once_with(fail_silently=False)
 
     def test_configuracion_informa_el_ultimo_intento_de_alerta(self):
@@ -801,5 +879,6 @@ class MovimientoInventarioTests(TestCase):
         response = client.get("/api/inventario/configuracion-alertas-stock/")
 
         self.assertEqual(response.status_code, 200)
+        self.assertNotIn("diagnostico_correo", response.data)
         self.assertFalse(response.data["ultimo_intento"]["enviado"])
         self.assertEqual(response.data["ultimo_intento"]["error"], "SMTP no disponible")

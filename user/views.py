@@ -13,6 +13,7 @@ from .serializers import (
     SupervisorSerializer,
 )
 from .services.personal_excel import parse_personal_excel
+from .services.instalacion_matcher import construir_indice_instalaciones, buscar_instalacion
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -95,15 +96,24 @@ class PersonalEmpresaViewSet(viewsets.ModelViewSet):
         personal_rows, errores = parse_personal_excel(archivo)
         creados = 0
         actualizados = 0
+        vinculados = 0
+        indice_instalaciones = construir_indice_instalaciones()
 
         for row in personal_rows:
+            instalacion = buscar_instalacion(row["ubicacion"], indice_instalaciones)
+            defaults = {
+                "nombre_completo": row["nombre_completo"],
+                "ubicacion": row["ubicacion"],
+                "activo": True,
+            }
+            # No borra una relación existente si el texto del Excel no coincide.
+            if instalacion:
+                defaults["instalacion"] = instalacion
+                vinculados += 1
+
             _, created = PersonalEmpresa.objects.update_or_create(
                 rut=row["rut"],
-                defaults={
-                    "nombre_completo": row["nombre_completo"],
-                    "ubicacion": row["ubicacion"],
-                    "activo": True,
-                },
+                defaults=defaults,
             )
             if created:
                 creados += 1
@@ -114,6 +124,7 @@ class PersonalEmpresaViewSet(viewsets.ModelViewSet):
             "procesados": len(personal_rows),
             "creados": creados,
             "actualizados": actualizados,
+            "vinculados": vinculados,
             "omitidos": len(errores),
             "errores": errores[:30],
         })

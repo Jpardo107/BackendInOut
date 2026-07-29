@@ -3,6 +3,7 @@ from django.test import TestCase
 from instalacion.models import Instalacion, Zona
 from .models import PersonalEmpresa
 from .serializers import PersonalEmpresaSerializer
+from .services.instalacion_matcher import buscar_instalacion, construir_indice_instalaciones
 from .services.rut import formatear_rut, normalizar_rut
 
 
@@ -55,3 +56,30 @@ class PersonalEmpresaTests(TestCase):
         persona = serializer.save()
         self.assertEqual(persona.instalacion, instalacion)
         self.assertEqual(persona.ubicacion, "EDIFICIO CENTRAL")
+
+    def test_busca_instalacion_por_nombre_normalizado_y_alias(self):
+        instalacion = Instalacion.objects.create(
+            nombre="Logisfashion Miraflores",
+            direccion="Dirección",
+            comuna="Santiago",
+            nombre_contacto="Contacto",
+            correo_contacto="contacto@example.com",
+            telefono_contacto="123456789",
+        )
+        indice = construir_indice_instalaciones()
+
+        self.assertEqual(buscar_instalacion("LOGIS MIRAFLORES", indice), instalacion)
+
+    def test_no_elige_instalacion_si_el_nombre_es_ambiguo(self):
+        datos = {
+            "nombre": "Bodega",
+            "direccion": "Dirección",
+            "comuna": "Santiago",
+            "nombre_contacto": "Contacto",
+            "correo_contacto": "contacto@example.com",
+            "telefono_contacto": "123456789",
+        }
+        Instalacion.objects.create(**datos)
+        Instalacion.objects.create(**datos)
+
+        self.assertIsNone(buscar_instalacion("BODEGA", construir_indice_instalaciones()))
