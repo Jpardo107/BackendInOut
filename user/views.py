@@ -24,7 +24,14 @@ class SupervisorListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]  # Puedes cambiar a AllowAny si quieres público
 
     def get_queryset(self):
-        return Usuario.objects.filter(cargo__nombre__iexact='Supervisor')
+        return (
+            Usuario.objects.filter(
+                models.Q(cargo__nombre__iexact="Supervisor")
+                | models.Q(cargo__nombre__iexact="Coordinador de Operaciones")
+            )
+            .select_related("cargo")
+            .order_by("nombres", "apellidos")
+        )
 
 
 class PersonalEmpresaViewSet(viewsets.ModelViewSet):

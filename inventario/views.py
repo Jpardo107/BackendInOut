@@ -89,7 +89,8 @@ def user_is_rrhh(user):
 
 
 def user_is_supervisor(user):
-    return "supervisor" in get_cargo_key(user)
+    cargo = get_cargo_key(user)
+    return "supervisor" in cargo or "coordinador de operaciones" in cargo
 
 
 def user_can_manage_delivery_authorizations(user):

@@ -1,7 +1,8 @@
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from instalacion.models import Instalacion, Zona
-from .models import PersonalEmpresa
+from .models import Cargo, PersonalEmpresa, Usuario
 from .serializers import PersonalEmpresaSerializer
 from .services.instalacion_matcher import buscar_instalacion, construir_indice_instalaciones
 from .services.rut import formatear_rut, normalizar_rut
@@ -16,6 +17,48 @@ class RutTests(TestCase):
     def test_formatea_rut_para_ui(self):
         self.assertEqual(formatear_rut("189356870"), "18.935.687-0")
         self.assertEqual(formatear_rut("8801779K"), "8.801.779-K")
+
+
+class SupervisorListTests(TestCase):
+    def test_incluye_supervisores_y_coordinadores_de_operaciones(self):
+        cargo_rrhh = Cargo.objects.create(nombre="Encargado RRHH")
+        cargo_supervisor = Cargo.objects.create(nombre="Supervisor")
+        cargo_coordinador = Cargo.objects.create(nombre="Coordinador de Operaciones")
+        rrhh = Usuario.objects.create_user(
+            username="rrhh.lista",
+            password="test-pass",
+            nombres="RRHH",
+            apellidos="Lista",
+            rut="11111111-1",
+            email="rrhh.lista@example.com",
+            cargo=cargo_rrhh,
+        )
+        supervisor = Usuario.objects.create_user(
+            username="supervisor.lista",
+            password="test-pass",
+            nombres="Supervisor",
+            apellidos="Lista",
+            rut="22222222-2",
+            email="supervisor.lista@example.com",
+            cargo=cargo_supervisor,
+        )
+        coordinador = Usuario.objects.create_user(
+            username="coordinador.lista",
+            password="test-pass",
+            nombres="Coordinador",
+            apellidos="Lista",
+            rut="33333333-3",
+            email="coordinador.lista@example.com",
+            cargo=cargo_coordinador,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=rrhh)
+        response = client.get("/api/supervisores/")
+
+        self.assertEqual(response.status_code, 200)
+        ids = {item["id"] for item in response.data}
+        self.assertEqual(ids, {supervisor.id, coordinador.id})
 
 
 class PersonalEmpresaTests(TestCase):
