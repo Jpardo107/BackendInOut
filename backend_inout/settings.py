@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'reportes',
     'inventario',
     'amonestaciones',
+    'postulaciones',
 ]
 
 REST_FRAMEWORK = {
@@ -136,6 +137,10 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 REPORTES_IMAGE_MAX_SIZE = int(os.getenv("REPORTES_IMAGE_MAX_SIZE", 10 * 1024 * 1024))
 REPORTES_IMPORT_MAX_SIZE = int(os.getenv("REPORTES_IMPORT_MAX_SIZE", 20 * 1024 * 1024))
 AMONESTACIONES_DOCUMENT_MAX_SIZE = int(os.getenv("AMONESTACIONES_DOCUMENT_MAX_SIZE", 20 * 1024 * 1024))
+POSTULACIONES_DOCUMENT_MAX_SIZE = int(os.getenv("POSTULACIONES_DOCUMENT_MAX_SIZE", 10 * 1024 * 1024))
+POSTULACIONES_MAX_PREGUNTAS = int(os.getenv("POSTULACIONES_MAX_PREGUNTAS", 10))
+POSTULACIONES_CONSENT_VERSION = os.getenv("POSTULACIONES_CONSENT_VERSION", "2026-01")
+POSTULACIONES_ADMIN_URL = os.getenv("POSTULACIONES_ADMIN_URL", "https://admin.inout.cl")
 
 # Correo SMTP para alertas de inventario
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
