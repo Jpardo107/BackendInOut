@@ -56,7 +56,7 @@ class PostulacionesApiTests(APITestCase):
             HTTP_ACCESS_CONTROL_REQUEST_HEADERS="x-postulacion-token,content-type",
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Access-Control-Allow-Origin"], "https://postulaciones.ejemplo.cl")
+        self.assertEqual(response["Access-Control-Allow-Origin"], "*")
         allowed_headers = response["Access-Control-Allow-Headers"].lower()
         self.assertIn("x-postulacion-token", allowed_headers)
         self.assertIn("content-type", allowed_headers)

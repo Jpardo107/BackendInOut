@@ -81,7 +81,10 @@ MIDDLEWARE = [
 # ]
 
 CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
+# El portal público usa tokens en cabeceras, no cookies. Mantener credenciales
+# desactivadas permite que cualquier origen reciba literalmente "*".
+CORS_ALLOW_CREDENTIALS = False
+CORS_ALLOW_PRIVATE_NETWORK = True
 CORS_ALLOW_HEADERS = (
     *default_headers,
     "x-postulacion-token",
