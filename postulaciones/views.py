@@ -395,7 +395,7 @@ class AdminPostulacionViewSet(viewsets.ModelViewSet):
         "estudios", "cursos", "experiencias", "preferencias__vacante__instalacion",
         "documentos",
     )
-    http_method_names = ["get", "patch", "head", "options"]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_serializer_class(self):
         return PostulacionAdminDetalleSerializer if self.action in ("retrieve", "partial_update", "verificar_qr") else PostulacionAdminListSerializer
@@ -421,6 +421,20 @@ class AdminPostulacionViewSet(viewsets.ModelViewSet):
         if old != postulacion.estado:
             audit(postulacion, "cambio_estado", request, {"desde": old, "hasta": postulacion.estado})
         return response
+
+    def perform_destroy(self, instance):
+        # Los registros relacionados se eliminan por CASCADE; los archivos en
+        # almacenamiento externo deben retirarse explícitamente.
+        for documento in instance.documentos.all():
+            try:
+                delete_document(documento.storage_key)
+            except Exception:
+                logger.exception(
+                    "No fue posible eliminar el documento %s de la postulación %s",
+                    documento.id,
+                    instance.id_publico,
+                )
+        instance.delete()
 
     @action(detail=False, methods=["get"], url_path=r"verificar-qr/(?P<token>[^/.]+)")
     def verificar_qr(self, request, token=None):
