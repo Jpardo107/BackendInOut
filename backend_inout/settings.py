@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 from dotenv import load_dotenv
 import os
+from corsheaders.defaults import default_headers, default_methods
 
 load_dotenv()
 import dj_database_url  # Asegúrate de instalar "dj-database-url"
@@ -80,6 +81,12 @@ MIDDLEWARE = [
 # ]
 
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = (
+    *default_headers,
+    "x-postulacion-token",
+)
+CORS_ALLOW_METHODS = default_methods
 ALLOWED_HOSTS = ["*"]
 
 ROOT_URLCONF = 'backend_inout.urls'

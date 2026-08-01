@@ -48,6 +48,19 @@ class PostulacionesApiTests(APITestCase):
         with self.assertRaises(Exception):
             validar_rut_chileno("18.935.687-1")
 
+    def test_cors_permite_origen_y_header_token_postulacion(self):
+        response = self.client.options(
+            f"/api/postulaciones/publicas/postulaciones/{self.postulacion.id_publico}/",
+            HTTP_ORIGIN="https://postulaciones.ejemplo.cl",
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD="GET",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="x-postulacion-token,content-type",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Access-Control-Allow-Origin"], "https://postulaciones.ejemplo.cl")
+        allowed_headers = response["Access-Control-Allow-Headers"].lower()
+        self.assertIn("x-postulacion-token", allowed_headers)
+        self.assertIn("content-type", allowed_headers)
+
     def test_vacante_publica_no_expone_instalacion(self):
         response = self.client.get("/api/postulaciones/publicas/postulaciones/vacantes/")
         self.assertEqual(response.status_code, 200)
