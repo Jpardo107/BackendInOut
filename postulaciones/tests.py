@@ -82,6 +82,43 @@ class PostulacionesApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_guarda_primer_paso_completo(self):
+        payload = {
+            "nombres": "Ana María",
+            "apellido_paterno": "Pérez",
+            "apellido_materno": "Soto",
+            "fecha_nacimiento": "1990-05-20",
+            "nacionalidad": "Chilena",
+            "telefono": "+56 9 1234 5678",
+            "email": "ana@example.com",
+            "comuna_residencia": "Maipú",
+            "direccion": "Calle Uno 123",
+            "situacion_migratoria": "",
+            "disponibilidad_incorporacion": "2026-08-15",
+            "tiene_licencia": True,
+            "clase_licencia": "B",
+            "movilizacion_propia": False,
+            "disponible_dia": True,
+            "disponible_noche": True,
+            "disponible_4x4": True,
+            "disponible_5x2": False,
+            "estado_os10": "vigente",
+            "os10_vencimiento": "2027-01-31",
+            "os10_numero": "OS10-123",
+            "paso_actual": 2,
+        }
+        response = self.client.patch(
+            f"/api/postulaciones/publicas/postulaciones/{self.postulacion.id_publico}/",
+            payload,
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.postulacion.refresh_from_db()
+        self.assertEqual(self.postulacion.paso_actual, 2)
+        self.assertEqual(self.postulacion.telefono, "+56912345678")
+        self.assertTrue(self.postulacion.disponible_4x4)
+
     def test_evaluacion_mezcla_general_y_tipos_sin_duplicados(self):
         vacante_condominio = VacanteGuardia.objects.create(
             instalacion=self.instalacion, tipo_instalacion=self.condominio,

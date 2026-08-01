@@ -145,10 +145,34 @@ class PostulacionPublicaSerializer(serializers.ModelSerializer):
     class Meta:
         model = PostulacionGuardia
         exclude = ("acceso_hash", "reclutador_asignado")
+        # El UniqueConstraint condicional generado automáticamente por DRF
+        # intenta leer `estado` aun en PATCH parciales y provoca KeyError.
+        # La misma regla se valida de forma explícita en validate().
+        validators = []
         read_only_fields = (
             "id", "id_publico", "codigo", "estado", "creado_en", "actualizado_en",
             "finalizada_en", "consentimiento_en",
         )
+
+    def validate(self, attrs):
+        instance = self.instance
+        rut = attrs.get("rut", instance.rut if instance else "")
+        email = attrs.get("email", instance.email if instance else "")
+        estado = attrs.get("estado", instance.estado if instance else "borrador")
+        estados_activos = ("borrador", "datos_incompletos", "pendiente_documentos", "evaluacion_pendiente")
+        if rut and email and estado in estados_activos:
+            duplicada = PostulacionGuardia.objects.filter(
+                rut=rut,
+                email__iexact=email,
+                estado__in=estados_activos,
+            )
+            if instance:
+                duplicada = duplicada.exclude(pk=instance.pk)
+            if duplicada.exists():
+                raise serializers.ValidationError({
+                    "detail": "Ya existe otra postulación activa con este RUT y correo."
+                })
+        return attrs
 
     def validate_rut(self, value):
         return validar_rut_chileno(value)

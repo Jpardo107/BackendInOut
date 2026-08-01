@@ -1,9 +1,10 @@
 import hashlib
+import logging
 import secrets
 import uuid
 
 from django.conf import settings
-from django.db import models, transaction
+from django.db import IntegrityError, models, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -58,6 +59,7 @@ ALLOWED_MIME = {
     "image/jpeg": (b"\xff\xd8\xff",),
     "image/png": (b"\x89PNG\r\n\x1a\n",),
 }
+logger = logging.getLogger(__name__)
 
 
 def token_hash(raw):
@@ -141,8 +143,25 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
         postulacion = self._get_postulacion(request, pk, editable=True)
         serializer = PostulacionPublicaSerializer(postulacion, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+        try:
+            with transaction.atomic():
+                serializer.save()
+        except IntegrityError:
+            logger.exception(
+                "Conflicto de integridad al actualizar postulación %s",
+                postulacion.id_publico,
+            )
+            raise ValidationError({
+                "detail": "Ya existe otra postulación activa con este RUT y correo. Recupera esa postulación o utiliza los datos originales."
+            })
+        except Exception:
+            logger.exception(
+                "Error inesperado al actualizar postulación %s. Campos recibidos: %s",
+                postulacion.id_publico,
+                sorted(request.data.keys()),
+            )
+            raise
+        return Response(PostulacionPublicaSerializer(postulacion).data)
 
     @action(detail=True, methods=["get", "post"], url_path="estudios")
     def estudios(self, request, pk=None):
