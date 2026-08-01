@@ -233,8 +233,8 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
     def preferencias(self, request, pk=None):
         postulacion = self._get_postulacion(request, pk, editable=True)
         seleccion = request.data.get("vacantes", [])
-        if not isinstance(seleccion, list) or not 1 <= len(seleccion) <= 3:
-            raise ValidationError({"vacantes": "Selecciona entre una y tres preferencias."})
+        if not isinstance(seleccion, list) or len(seleccion) > 3:
+            raise ValidationError({"vacantes": "Selecciona hasta tres preferencias."})
         ids = [item.get("public_id") for item in seleccion]
         if len(ids) != len(set(ids)):
             raise ValidationError({"vacantes": "No puedes repetir una vacante."})
@@ -359,8 +359,6 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
         errores = {}
         if len(postulacion.presentacion.strip()) < 40:
             errores["presentacion"] = "Completa tu presentación personal."
-        if not postulacion.preferencias.exists():
-            errores["preferencias"] = "Selecciona al menos una vacante."
         try:
             pendientes = postulacion.evaluacion.preguntas_asignadas.filter(
                 obligatoria=True, respuesta__isnull=True
@@ -374,7 +372,7 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
         if errores:
             raise ValidationError(errores)
         now = timezone.now()
-        postulacion.estado = "finalizada"
+        postulacion.estado = "finalizada" if postulacion.preferencias.exists() else "banco_postulantes"
         postulacion.finalizada_en = now
         postulacion.declaracion_veracidad = True
         postulacion.consentimiento_datos = True

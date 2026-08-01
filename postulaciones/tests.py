@@ -8,13 +8,14 @@ from instalacion.models import Instalacion
 from user.models import Cargo
 from .models import (
     PostulacionGuardia,
+    EvaluacionPostulacion,
     PreferenciaVacantePostulante,
     PreguntaPostulacion,
     TipoInstalacionLaboral,
     TokenQrPostulacion,
     VacanteGuardia,
 )
-from .serializers import validar_rut_chileno
+from .serializers import formatear_rut_chileno, validar_rut_chileno
 from .views import token_hash
 
 
@@ -45,8 +46,27 @@ class PostulacionesApiTests(APITestCase):
 
     def test_valida_rut_chileno(self):
         self.assertEqual(validar_rut_chileno("18.935.687-0"), "189356870")
+        self.assertEqual(formatear_rut_chileno("189356870"), "18.935.687-0")
         with self.assertRaises(Exception):
             validar_rut_chileno("18.935.687-1")
+
+    def test_permite_continuar_sin_vacantes_para_banco(self):
+        response = self.client.put(
+            f"/api/postulaciones/publicas/postulaciones/{self.postulacion.id_publico}/preferencias/",
+            {"vacantes": []}, format="json", **self.headers,
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["preferencias"], [])
+
+        EvaluacionPostulacion.objects.create(postulacion=self.postulacion)
+        final = self.client.post(
+            f"/api/postulaciones/publicas/postulaciones/{self.postulacion.id_publico}/finalizar/",
+            {"declaracion_veracidad": True, "consentimiento_datos": True},
+            format="json", **self.headers,
+        )
+        self.assertEqual(final.status_code, 200, final.data)
+        self.postulacion.refresh_from_db()
+        self.assertEqual(self.postulacion.estado, "banco_postulantes")
 
     def test_cors_permite_origen_y_header_token_postulacion(self):
         response = self.client.options(

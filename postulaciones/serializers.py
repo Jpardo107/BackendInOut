@@ -39,6 +39,26 @@ def validar_rut_chileno(value):
     return rut
 
 
+def formatear_rut_chileno(value):
+    rut = normalizar_rut(value)
+    if len(rut) < 2:
+        return rut
+    cuerpo, dv = rut[:-1], rut[-1]
+    grupos = []
+    while cuerpo:
+        grupos.insert(0, cuerpo[-3:])
+        cuerpo = cuerpo[:-3]
+    return f"{'.'.join(grupos)}-{dv}"
+
+
+class RutSerializerField(serializers.CharField):
+    def to_internal_value(self, data):
+        return validar_rut_chileno(super().to_internal_value(data))
+
+    def to_representation(self, value):
+        return formatear_rut_chileno(value)
+
+
 class TipoInstalacionSerializer(serializers.ModelSerializer):
     class Meta:
         model = TipoInstalacionLaboral
@@ -135,6 +155,7 @@ class DocumentoPublicoSerializer(serializers.ModelSerializer):
 
 
 class PostulacionPublicaSerializer(serializers.ModelSerializer):
+    rut = RutSerializerField()
     estudios = EstudioSerializer(many=True, read_only=True)
     cursos = CursoSerializer(many=True, read_only=True)
     experiencias = ExperienciaSerializer(many=True, read_only=True)
@@ -173,9 +194,6 @@ class PostulacionPublicaSerializer(serializers.ModelSerializer):
                     "detail": "Ya existe otra postulación activa con este RUT y correo."
                 })
         return attrs
-
-    def validate_rut(self, value):
-        return validar_rut_chileno(value)
 
     def validate_presentacion(self, value):
         value = value.strip()
@@ -240,6 +258,7 @@ class EvaluacionAdminSerializer(serializers.ModelSerializer):
 
 
 class PostulacionAdminListSerializer(serializers.ModelSerializer):
+    rut = RutSerializerField(read_only=True)
     nombre_completo = serializers.CharField(read_only=True)
     os10_vigente = serializers.SerializerMethodField()
 
