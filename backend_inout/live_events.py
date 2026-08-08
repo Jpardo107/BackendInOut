@@ -3,6 +3,7 @@ import logging
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.db import transaction
+from django.utils import timezone
 
 
 logger = logging.getLogger(__name__)
@@ -116,17 +117,29 @@ def solicitud_summary(supervision):
 
 
 def report_summary(reporte):
+    event_time = timezone.localtime(reporte.actualizado_en)
     return {
         "id": reporte.id,
+        "tipo_reporte": reporte.tipo_reporte,
         "instalacion_id": reporte.instalacion_id,
         "instalacion": reporte.instalacion.nombre,
         "autor": reporte.autor_nombre,
         "fecha": reporte.fecha_emision.isoformat(),
+        "hora": event_time.time().replace(microsecond=0).isoformat(),
         "estado": reporte.estado,
         "criticidad": reporte.criticidad_general,
     }
 
 
 def schedule_report_event(reporte, action):
-    prefix = "preinforme" if reporte.tipo_reporte == "pre_informe" else "informe"
-    schedule_live_event(f"{prefix}.{action}", report_summary(reporte), source=reporte)
+    if reporte.tipo_reporte == "pre_informe":
+        # En el flujo actual, guardar el preinforme es su acción de finalización.
+        if action != "created":
+            return
+        event_type = "preinforme.created"
+    else:
+        # Vulnerabilidades solo está terminado después del procesamiento exitoso.
+        if action != "updated" or reporte.estado != "generado":
+            return
+        event_type = "informe.updated"
+    schedule_live_event(event_type, report_summary(reporte), source=reporte)

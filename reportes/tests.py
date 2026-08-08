@@ -9,8 +9,43 @@ from io import BytesIO
 from instalacion.models import Instalacion
 from user.models import Cargo, Usuario
 from .models import ImagenReporteInforme, ReporteInforme
+from backend_inout.live_events import schedule_report_event
 
 from .views import _image_text_values, _validate_images
+
+
+class ReportLiveEventTests(SimpleTestCase):
+    def report(self, tipo, estado):
+        from django.utils import timezone
+        return type("Report", (), {
+            "id": 10,
+            "tipo_reporte": tipo,
+            "estado": estado,
+            "instalacion_id": 2,
+            "instalacion": type("Installation", (), {"nombre": "Planta"})(),
+            "autor_nombre": "Ana Pérez",
+            "fecha_emision": timezone.localdate(),
+            "actualizado_en": timezone.now(),
+            "criticidad_general": "media",
+        })()
+
+    @patch("backend_inout.live_events.schedule_live_event")
+    def test_preinforme_solo_alerta_al_crearse(self, publish_mock):
+        report = self.report(ReporteInforme.TIPO_PRE_INFORME, ReporteInforme.ESTADO_BORRADOR)
+        schedule_report_event(report, "updated")
+        publish_mock.assert_not_called()
+        schedule_report_event(report, "created")
+        self.assertEqual(publish_mock.call_args.args[0], "preinforme.created")
+
+    @patch("backend_inout.live_events.schedule_live_event")
+    def test_vulnerabilidad_solo_alerta_al_quedar_generada(self, publish_mock):
+        report = self.report(ReporteInforme.TIPO_VULNERABILIDADES, ReporteInforme.ESTADO_PROCESANDO_IA)
+        schedule_report_event(report, "created")
+        schedule_report_event(report, "updated")
+        publish_mock.assert_not_called()
+        report.estado = ReporteInforme.ESTADO_GENERADO
+        schedule_report_event(report, "updated")
+        self.assertEqual(publish_mock.call_args.args[0], "informe.updated")
 
 
 class ReportesImageValidationTests(SimpleTestCase):
