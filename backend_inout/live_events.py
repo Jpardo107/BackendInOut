@@ -91,15 +91,18 @@ def supervision_summary(supervision):
     }
 
 
-def supervision_started_summary(instalacion, supervisor, started_at, latitud=None, longitud=None):
+def supervision_started_summary(
+    instalacion, supervisor, started_at, latitud=None, longitud=None,
+    device_date=None, device_time=None,
+):
     return {
         "id": None,
         "instalacion_id": instalacion.id,
         "instalacion": instalacion.nombre,
         "supervisor_id": supervisor.id,
         "supervisor": f"{supervisor.nombres} {supervisor.apellidos}".strip(),
-        "fecha": started_at.date().isoformat(),
-        "hora_inicio": started_at.time().replace(microsecond=0).isoformat(),
+        "fecha": (device_date or started_at.date()).isoformat(),
+        "hora_inicio": (device_time or started_at.time()).replace(microsecond=0).isoformat(),
         "estado": "en_curso",
         "latitud": latitud,
         "longitud": longitud,

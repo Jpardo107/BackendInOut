@@ -68,7 +68,13 @@ class SupervisionStartTests(TestCase):
     def test_escaneo_registra_evento_de_inicio_con_usuario_autenticado(self, publish_mock):
         response = self.client.post(
             "/api/supervision/supervisiones/iniciar/",
-            {"instalacion": self.instalacion.id, "latitud": -33.4489, "longitud": -70.6693},
+            {
+                "instalacion": self.instalacion.id,
+                "latitud": -33.4489,
+                "longitud": -70.6693,
+                "fecha": "2026-08-08",
+                "hora_inicio": "15:42:10",
+            },
             format="json",
         )
 
@@ -76,6 +82,8 @@ class SupervisionStartTests(TestCase):
         self.assertEqual(response.data["instalacion"], "Planta Norte")
         self.assertEqual(response.data["supervisor"], "Ana Pérez")
         self.assertEqual(response.data["latitud"], -33.4489)
+        self.assertEqual(response.data["fecha"], "2026-08-08")
+        self.assertEqual(response.data["hora_inicio"], "15:42:10")
         publish_mock.assert_called_once()
         self.assertEqual(publish_mock.call_args.args[0], "supervision.started")
 

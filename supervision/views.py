@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_time
 from backend_inout.live_events import (
     schedule_live_event,
     solicitud_summary,
@@ -71,6 +72,12 @@ class SupervisionViewSet(viewsets.ModelViewSet):
             raise ValidationError({"instalacion": "La instalación no existe."})
 
         started_at = timezone.localtime()
+        raw_device_date = request.data.get("fecha")
+        raw_device_time = request.data.get("hora_inicio")
+        device_date = parse_date(str(raw_device_date or ""))
+        device_time = parse_time(str(raw_device_time or ""))
+        if (raw_device_date or raw_device_time) and (not device_date or not device_time):
+            raise ValidationError({"inicio": "La fecha u hora local del dispositivo no es válida."})
         latitud = request.data.get("latitud")
         longitud = request.data.get("longitud")
         try:
@@ -84,7 +91,13 @@ class SupervisionViewSet(viewsets.ModelViewSet):
             raise ValidationError({"longitud": "La longitud está fuera de rango."})
 
         summary = supervision_started_summary(
-            instalacion, request.user, started_at, latitud=latitud, longitud=longitud
+            instalacion,
+            request.user,
+            started_at,
+            latitud=latitud,
+            longitud=longitud,
+            device_date=device_date,
+            device_time=device_time,
         )
         schedule_live_event(
             "supervision.started",
