@@ -91,7 +91,7 @@ def supervision_summary(supervision):
     }
 
 
-def supervision_started_summary(instalacion, supervisor, started_at):
+def supervision_started_summary(instalacion, supervisor, started_at, latitud=None, longitud=None):
     return {
         "id": None,
         "instalacion_id": instalacion.id,
@@ -101,6 +101,8 @@ def supervision_started_summary(instalacion, supervisor, started_at):
         "fecha": started_at.date().isoformat(),
         "hora_inicio": started_at.time().replace(microsecond=0).isoformat(),
         "estado": "en_curso",
+        "latitud": latitud,
+        "longitud": longitud,
     }
 
 

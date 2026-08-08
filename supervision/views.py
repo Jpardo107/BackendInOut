@@ -71,7 +71,21 @@ class SupervisionViewSet(viewsets.ModelViewSet):
             raise ValidationError({"instalacion": "La instalación no existe."})
 
         started_at = timezone.localtime()
-        summary = supervision_started_summary(instalacion, request.user, started_at)
+        latitud = request.data.get("latitud")
+        longitud = request.data.get("longitud")
+        try:
+            latitud = round(float(latitud), 6) if latitud not in (None, "") else None
+            longitud = round(float(longitud), 6) if longitud not in (None, "") else None
+        except (TypeError, ValueError):
+            raise ValidationError({"ubicacion": "Las coordenadas no son válidas."})
+        if latitud is not None and not -90 <= latitud <= 90:
+            raise ValidationError({"latitud": "La latitud está fuera de rango."})
+        if longitud is not None and not -180 <= longitud <= 180:
+            raise ValidationError({"longitud": "La longitud está fuera de rango."})
+
+        summary = supervision_started_summary(
+            instalacion, request.user, started_at, latitud=latitud, longitud=longitud
+        )
         schedule_live_event(
             "supervision.started",
             summary,
