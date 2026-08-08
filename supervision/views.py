@@ -2,6 +2,11 @@ from rest_framework import viewsets, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from django.utils import timezone
+from backend_inout.live_events import (
+    schedule_live_event,
+    solicitud_summary,
+    supervision_summary,
+)
 from .models import Supervision, FotoSupervision
 from .serializers import SupervisionSerializer, SupervisionDetailSerializer, FotoSupervisionSerializer
 
@@ -38,6 +43,19 @@ class SupervisionViewSet(viewsets.ModelViewSet):
 
         return queryset.order_by("-fecha", "-hora_inicio")
 
+    def perform_create(self, serializer):
+        supervision = serializer.save()
+        summary = supervision_summary(supervision)
+        schedule_live_event("supervision.created", summary, source=supervision)
+        schedule_live_event("supervision.completed", summary, source=supervision)
+        solicitud = (supervision.solicitudes or "").strip().lower()
+        if solicitud and solicitud != "sin solicitudes":
+            schedule_live_event(
+                "solicitud.created",
+                solicitud_summary(supervision),
+                source=supervision,
+            )
+
     def partial_update(self, request, *args, **kwargs):
         """Sobrescribimos PATCH para restringirlo solo a 'estado_solicitud'."""
         # Obtenemos la instancia actual
@@ -61,6 +79,16 @@ class SupervisionViewSet(viewsets.ModelViewSet):
         # Actualizamos únicamente el campo 'estado_solicitud'
         instance.estado_solicitud = data['estado_solicitud']
         instance.save()
+
+        summary = supervision_summary(instance)
+        schedule_live_event("supervision.updated", summary, source=instance)
+        solicitud = (instance.solicitudes or "").strip().lower()
+        if solicitud and solicitud != "sin solicitudes":
+            schedule_live_event(
+                "solicitud.updated",
+                solicitud_summary(instance),
+                source=instance,
+            )
 
         # Retornamos la instancia actualizada
         serializer = self.get_serializer(instance)

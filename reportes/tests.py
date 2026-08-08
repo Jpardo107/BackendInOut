@@ -107,8 +107,9 @@ class ReporteTextosUpdateTests(TestCase):
         self.assertEqual(self.reporte.analisis_final_usuario, "")
         self.assertEqual(self.imagen.recomendacion_usuario, "")
 
+    @patch("reportes.views.schedule_report_event")
     @patch("reportes.views._schedule_vulnerabilidades_ai")
-    def test_vulnerabilidades_sin_ia_se_guarda_como_borrador(self, schedule_mock):
+    def test_vulnerabilidades_sin_ia_se_guarda_como_borrador(self, schedule_mock, live_event_mock):
         response = self.client.post(
             "/api/reportes-informes/",
             {
@@ -127,6 +128,7 @@ class ReporteTextosUpdateTests(TestCase):
         self.assertEqual(reporte.tipo_reporte, ReporteInforme.TIPO_VULNERABILIDADES)
         self.assertEqual(reporte.estado, ReporteInforme.ESTADO_BORRADOR)
         schedule_mock.assert_not_called()
+        live_event_mock.assert_called_once_with(reporte, "created")
 
     @patch("reportes.views.delete_document")
     def test_elimina_reporte_imagenes_y_archivos_almacenados(self, delete_document_mock):

@@ -17,6 +17,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from documentacion.services.r2_storage import delete_document, upload_document
+from backend_inout.live_events import schedule_report_event
 
 from .models import (
     ImagenReporteInforme,
@@ -315,6 +316,7 @@ def _apply_ai_result(reporte, result):
             "actualizado_en",
         ]
     )
+    schedule_report_event(reporte, "updated")
 
 
 def _safe_error(exc):
@@ -343,6 +345,7 @@ def _run_vulnerabilidades_ai(reporte):
         reporte.estado = ReporteInforme.ESTADO_ERROR_IA
         reporte.respuesta_ia_raw = {"error": _safe_error(exc)}
         reporte.save(update_fields=["estado", "respuesta_ia_raw", "actualizado_en"])
+        schedule_report_event(reporte, "updated")
 
 
 def _run_vulnerabilidades_ai_by_id(reporte_id):
@@ -357,6 +360,7 @@ def _run_vulnerabilidades_ai_by_id(reporte_id):
 def _schedule_vulnerabilidades_ai(reporte):
     reporte.estado = ReporteInforme.ESTADO_PROCESANDO_IA
     reporte.save(update_fields=["estado", "actualizado_en"])
+    schedule_report_event(reporte, "updated")
 
     thread = threading.Thread(
         target=_run_vulnerabilidades_ai_by_id,
@@ -584,6 +588,8 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
                 )
 
         generar_ia = _parse_bool(_first(request.data, "generar_ia", "generarIA", default=True))
+        schedule_report_event(reporte, "created")
+
         if reporte.tipo_reporte == ReporteInforme.TIPO_VULNERABILIDADES and generar_ia:
             _schedule_vulnerabilidades_ai(reporte)
 
@@ -647,6 +653,8 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
                 ]
             )
 
+        schedule_report_event(reporte, "created")
+
         if reporte.tipo_reporte == ReporteInforme.TIPO_VULNERABILIDADES:
             _schedule_vulnerabilidades_ai(reporte)
 
@@ -707,5 +715,6 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
                 image.save(update_fields=list(image_data.keys()))
 
         reporte.refresh_from_db()
+        schedule_report_event(reporte, "updated")
         detail = ReporteInformeDetailSerializer(reporte, context={"request": request})
         return Response(detail.data)

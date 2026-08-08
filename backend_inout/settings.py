@@ -14,6 +14,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 from corsheaders.defaults import default_headers, default_methods
+from django.core.exceptions import ImproperlyConfigured
 
 load_dotenv()
 import dj_database_url  # Asegúrate de instalar "dj-database-url"
@@ -35,6 +36,7 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
+    'channels',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -110,6 +112,30 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'backend_inout.wsgi.application'
+ASGI_APPLICATION = 'backend_inout.asgi.application'
+
+# Redis es obligatorio en producción para compartir eventos entre procesos.
+# El layer en memoria se reserva exclusivamente para desarrollo y tests locales.
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+                "capacity": 1500,
+                "expiry": 60,
+            },
+        },
+    }
+elif os.getenv("RENDER", "").strip().lower() == "true":
+    raise ImproperlyConfigured("REDIS_URL es obligatoria en Render para Vistas en vivo.")
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
