@@ -25,6 +25,8 @@ class ZonaSerializer(serializers.ModelSerializer):
         return instance
 
 class InstalacionSerializer(serializers.ModelSerializer):
+    cantidad_guardias = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Instalacion
         fields = '__all__'

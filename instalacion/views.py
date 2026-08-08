@@ -1,5 +1,6 @@
 # instalacion/views.py
 
+from django.db.models import Count, Q
 from rest_framework import viewsets, permissions
 from rest_framework.exceptions import ValidationError
 from .models import Instalacion, Zona
@@ -29,6 +30,8 @@ class ZonaViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 class InstalacionViewSet(viewsets.ModelViewSet):
-    queryset = Instalacion.objects.all()
+    queryset = Instalacion.objects.annotate(
+        cantidad_guardias=Count("personal", filter=Q(personal__activo=True), distinct=True)
+    )
     serializer_class = InstalacionSerializer
     permission_classes = [permissions.IsAuthenticated]  # Solo usuarios autenticados
