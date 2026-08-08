@@ -90,6 +90,22 @@ class PostulacionesApiTests(APITestCase):
         self.assertNotIn("nombre", payload)
         self.assertNotIn("CLIENTE SECRETO", str(payload))
 
+    def test_listado_publico_solo_muestra_vacantes_publicadas(self):
+        vacante_terminada = VacanteGuardia.objects.create(
+            instalacion=self.instalacion, tipo_instalacion=self.bodega,
+            comuna_publica="Renca", descripcion_publica="Vacante terminada",
+            jornada="Completa", sistema_turno="4x4", sueldo=650000,
+            estado="cerrado", cantidad_cupos=2,
+        )
+
+        response = self.client.get("/api/postulaciones/publicas/postulaciones/vacantes/")
+
+        self.assertEqual(response.status_code, 200)
+        ids = {item["public_id"] for item in response.data}
+        self.assertIn(str(self.vacante.public_id), ids)
+        self.assertNotIn(str(vacante_terminada.public_id), ids)
+        self.assertTrue(all(item["estado"] == "publicado" for item in response.data))
+
     def test_token_no_permite_acceder_a_otra_postulacion(self):
         otra = PostulacionGuardia.objects.create(
             nombres="Beto", apellido_paterno="Soto", rut="8801779K",

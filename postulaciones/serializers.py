@@ -113,7 +113,7 @@ class VacantePublicaSerializer(serializers.ModelSerializer):
     class Meta:
         model = VacanteGuardia
         fields = (
-            "public_id", "comuna_publica", "tipo_instalacion", "descripcion_publica",
+            "public_id", "estado", "comuna_publica", "tipo_instalacion", "descripcion_publica",
             "jornada", "sistema_turno", "horario", "sueldo", "sueldo_liquido",
             "beneficios", "requisitos", "disponibles", "fecha_inicio",
             "requiere_os10_vigente", "requiere_licencia", "requiere_movilizacion",
