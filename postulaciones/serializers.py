@@ -148,9 +148,11 @@ class PreguntaPublicaSerializer(serializers.ModelSerializer):
 
 
 class DocumentoPublicoSerializer(serializers.ModelSerializer):
+    nombre_documento = serializers.CharField(read_only=True)
+
     class Meta:
         model = DocumentoPostulacion
-        fields = ("id", "tipo_documento", "nombre_original", "mime_type", "size", "estado", "fecha_vencimiento", "observaciones", "creado_en")
+        fields = ("id", "tipo_documento", "nombre_documento", "nombre_original", "mime_type", "size", "estado", "fecha_vencimiento", "observaciones", "creado_en")
         read_only_fields = fields
 
 
@@ -237,6 +239,7 @@ class PreferenciaAdminSerializer(serializers.ModelSerializer):
 
 class DocumentoAdminSerializer(serializers.ModelSerializer):
     url = serializers.SerializerMethodField()
+    nombre_documento = serializers.CharField(read_only=True)
 
     class Meta:
         model = DocumentoPostulacion
@@ -244,7 +247,9 @@ class DocumentoAdminSerializer(serializers.ModelSerializer):
 
     def get_url(self, obj):
         try:
-            return generate_signed_url(obj.storage_key, expires=600, filename=obj.nombre_original, disposition="inline")
+            extension = obj.nombre_original.rsplit(".", 1)[-1] if "." in obj.nombre_original else ""
+            filename = f"{obj.nombre_documento}.{extension}" if extension else obj.nombre_documento
+            return generate_signed_url(obj.storage_key, expires=600, filename=filename, disposition="inline")
         except Exception:
             return ""
 

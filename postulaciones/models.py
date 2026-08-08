@@ -244,13 +244,23 @@ class RespuestaPostulacion(models.Model):
 
 
 class DocumentoPostulacion(models.Model):
+    TIPOS = [
+        ("cedula_frontal", "Cédula frontal"),
+        ("cedula_posterior", "Cédula posterior"),
+        ("certificado_os10", "Certificado OS10"),
+        ("curriculum", "Currículum"),
+        ("certificado_estudios", "Certificado de estudios"),
+        ("licencia_conducir", "Licencia de conducir"),
+        ("documentacion_migratoria", "Documentación migratoria"),
+        ("otro", "Otro antecedente"),
+    ]
     ESTADOS = [
         ("cargado", "Cargado"), ("pendiente_revision", "Pendiente de revisión"),
         ("validado", "Validado"), ("rechazado", "Rechazado"), ("vencido", "Vencido"),
     ]
     postulacion = models.ForeignKey(PostulacionGuardia, on_delete=models.CASCADE, related_name="documentos")
     curso = models.ForeignKey(CursoPostulante, null=True, blank=True, on_delete=models.SET_NULL, related_name="documentos")
-    tipo_documento = models.CharField(max_length=60)
+    tipo_documento = models.CharField(max_length=60, choices=TIPOS)
     nombre_original = models.CharField(max_length=255)
     storage_key = models.CharField(max_length=500, unique=True)
     mime_type = models.CharField(max_length=120)
@@ -261,6 +271,10 @@ class DocumentoPostulacion(models.Model):
     validado_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     validado_en = models.DateTimeField(null=True, blank=True)
     creado_en = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def nombre_documento(self):
+        return self.get_tipo_documento_display()
 
 
 class TokenQrPostulacion(models.Model):

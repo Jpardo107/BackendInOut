@@ -311,6 +311,8 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
         tipo = str(request.data.get("tipo_documento", "")).strip()
         if not archivo or not tipo:
             raise ValidationError({"archivo": "Adjunta un archivo e indica su tipo."})
+        if tipo not in dict(DocumentoPostulacion.TIPOS):
+            raise ValidationError({"tipo_documento": "Selecciona un tipo de documento válido."})
         max_size = getattr(settings, "POSTULACIONES_DOCUMENT_MAX_SIZE", 10 * 1024 * 1024)
         if archivo.size > max_size:
             raise ValidationError({"archivo": "El archivo supera el tamaño máximo permitido."})

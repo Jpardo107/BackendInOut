@@ -204,5 +204,8 @@ class PostulacionesApiTests(APITestCase):
             {"tipo_documento": "curriculum", "archivo": archivo},
             format="multipart", **self.headers,
         )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["tipo_documento"], "curriculum")
+        self.assertEqual(response.data["nombre_documento"], "Currículum")
         self.assertEqual(response.status_code, 201)
         self.assertNotIn(self.postulacion.rut, upload_mock.call_args.args[1])
