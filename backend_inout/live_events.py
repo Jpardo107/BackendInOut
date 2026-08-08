@@ -85,6 +85,21 @@ def supervision_summary(supervision):
         "hora_inicio": supervision.hora_inicio.isoformat(),
         "hora_final": supervision.hora_final.isoformat(),
         "estado_solicitud": supervision.estado_solicitud,
+        "novedades": (supervision.novedades or "Sin novedades")[:300],
+        "solicitudes": (supervision.solicitudes or "Sin solicitudes")[:300],
+    }
+
+
+def supervision_started_summary(instalacion, supervisor, started_at):
+    return {
+        "id": None,
+        "instalacion_id": instalacion.id,
+        "instalacion": instalacion.nombre,
+        "supervisor_id": supervisor.id,
+        "supervisor": f"{supervisor.nombres} {supervisor.apellidos}".strip(),
+        "fecha": started_at.date().isoformat(),
+        "hora_inicio": started_at.time().replace(microsecond=0).isoformat(),
+        "estado": "en_curso",
     }
 
 

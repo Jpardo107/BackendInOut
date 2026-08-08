@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from django.utils import timezone
@@ -6,7 +7,9 @@ from backend_inout.live_events import (
     schedule_live_event,
     solicitud_summary,
     supervision_summary,
+    supervision_started_summary,
 )
+from instalacion.models import Instalacion
 from .models import Supervision, FotoSupervision
 from .serializers import SupervisionSerializer, SupervisionDetailSerializer, FotoSupervisionSerializer
 
@@ -55,6 +58,27 @@ class SupervisionViewSet(viewsets.ModelViewSet):
                 solicitud_summary(supervision),
                 source=supervision,
             )
+
+    @action(detail=False, methods=["post"], url_path="iniciar")
+    def iniciar(self, request):
+        instalacion_id = request.data.get("instalacion")
+        if not instalacion_id:
+            raise ValidationError({"instalacion": "Este campo es obligatorio."})
+
+        try:
+            instalacion = Instalacion.objects.get(pk=instalacion_id)
+        except (Instalacion.DoesNotExist, TypeError, ValueError):
+            raise ValidationError({"instalacion": "La instalación no existe."})
+
+        started_at = timezone.localtime()
+        summary = supervision_started_summary(instalacion, request.user, started_at)
+        schedule_live_event(
+            "supervision.started",
+            summary,
+            source=instalacion,
+            user=request.user,
+        )
+        return Response(summary, status=status.HTTP_200_OK)
 
     def partial_update(self, request, *args, **kwargs):
         """Sobrescribimos PATCH para restringirlo solo a 'estado_solicitud'."""
