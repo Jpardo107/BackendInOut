@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Supervision
+from .models import Supervision, SupervisionActiva
 from cargo_fijo.models import EstadoCargoFijo
 from documentacion.models import EstadoDocumentacion
 
@@ -19,3 +19,9 @@ class SupervisionAdmin(admin.ModelAdmin):
     list_filter = ('fecha', 'instalacion', 'supervisor')
     search_fields = ('instalacion__nombre', 'supervisor__username')
     inlines = [EstadoCargoFijoInline, EstadoDocumentacionInline]
+
+
+@admin.register(SupervisionActiva)
+class SupervisionActivaAdmin(admin.ModelAdmin):
+    list_display = ("supervisor", "instalacion", "fecha", "hora_inicio", "actualizada_en")
+    list_filter = ("fecha", "instalacion")

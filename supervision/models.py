@@ -38,3 +38,21 @@ class FotoSupervision(models.Model):
 
     def __str__(self):
         return f"Foto Supervision {self.supervision.id} - {self.url_imagen}"
+
+
+class SupervisionActiva(models.Model):
+    supervisor = models.OneToOneField(
+        Usuario, on_delete=models.CASCADE, related_name="supervision_activa"
+    )
+    instalacion = models.ForeignKey(
+        Instalacion, on_delete=models.CASCADE, related_name="supervisiones_activas"
+    )
+    fecha = models.DateField()
+    hora_inicio = models.TimeField()
+    latitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+    actualizada_en = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.supervisor} - {self.instalacion} - {self.fecha} {self.hora_inicio}"

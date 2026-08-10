@@ -5,13 +5,14 @@ from rest_framework.response import Response
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_time
 from backend_inout.live_events import (
+    can_access_live,
     schedule_live_event,
     solicitud_summary,
     supervision_summary,
     supervision_started_summary,
 )
 from instalacion.models import Instalacion
-from .models import Supervision, FotoSupervision
+from .models import Supervision, FotoSupervision, SupervisionActiva
 from .serializers import SupervisionSerializer, SupervisionDetailSerializer, FotoSupervisionSerializer
 
 
@@ -35,6 +36,28 @@ def get_mes_anio_from_request(request):
     return mes, anio
 
 
+def active_supervision_summary(active):
+    supervisor = active.supervisor
+    return {
+        "id": active.id,
+        "instalacion_id": active.instalacion_id,
+        "instalacion": active.instalacion.nombre,
+        "instalacion_detalle": {
+            "id": active.instalacion_id,
+            "nombre": active.instalacion.nombre,
+            "direccion": active.instalacion.direccion,
+            "comuna": active.instalacion.comuna,
+        },
+        "supervisor_id": active.supervisor_id,
+        "supervisor": f"{supervisor.nombres} {supervisor.apellidos}".strip(),
+        "fecha": active.fecha.isoformat(),
+        "hora_inicio": active.hora_inicio.isoformat(),
+        "latitud": float(active.latitud) if active.latitud is not None else None,
+        "longitud": float(active.longitud) if active.longitud is not None else None,
+        "estado": "en_curso",
+    }
+
+
 class SupervisionViewSet(viewsets.ModelViewSet):
     serializer_class = SupervisionSerializer
 
@@ -49,6 +72,7 @@ class SupervisionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         supervision = serializer.save()
+        SupervisionActiva.objects.filter(supervisor_id=supervision.supervisor_id).delete()
         summary = supervision_summary(supervision)
         schedule_live_event("supervision.created", summary, source=supervision)
         schedule_live_event("supervision.completed", summary, source=supervision)
@@ -99,6 +123,17 @@ class SupervisionViewSet(viewsets.ModelViewSet):
             device_date=device_date,
             device_time=device_time,
         )
+        active, _ = SupervisionActiva.objects.update_or_create(
+            supervisor=request.user,
+            defaults={
+                "instalacion": instalacion,
+                "fecha": device_date or started_at.date(),
+                "hora_inicio": device_time or started_at.time().replace(microsecond=0),
+                "latitud": latitud,
+                "longitud": longitud,
+            },
+        )
+        summary["id"] = active.id
         schedule_live_event(
             "supervision.started",
             summary,
@@ -106,6 +141,25 @@ class SupervisionViewSet(viewsets.ModelViewSet):
             user=request.user,
         )
         return Response(summary, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["get", "delete"], url_path="activa")
+    def activa(self, request):
+        if request.method == "DELETE":
+            SupervisionActiva.objects.filter(supervisor=request.user).delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        active = (
+            SupervisionActiva.objects.select_related("instalacion", "supervisor")
+            .filter(supervisor=request.user)
+            .first()
+        )
+        return Response(active_supervision_summary(active) if active else None)
+
+    @action(detail=False, methods=["get"], url_path="activas")
+    def activas(self, request):
+        if not can_access_live(request.user):
+            return Response({"detail": "No autorizado."}, status=status.HTTP_403_FORBIDDEN)
+        active = SupervisionActiva.objects.select_related("instalacion", "supervisor")
+        return Response([active_supervision_summary(item) for item in active])
 
     def partial_update(self, request, *args, **kwargs):
         """Sobrescribimos PATCH para restringirlo solo a 'estado_solicitud'."""

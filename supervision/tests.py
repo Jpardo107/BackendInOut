@@ -8,11 +8,13 @@ from rest_framework.test import APIClient
 from instalacion.models import Instalacion
 from user.models import Cargo, Usuario
 from .views import SupervisionViewSet
+from .models import SupervisionActiva
 
 
 class SupervisionLiveEventTests(SimpleTestCase):
+    @patch("supervision.views.SupervisionActiva.objects.filter")
     @patch("supervision.views.schedule_live_event")
-    def test_crear_supervision_programa_eventos_resumidos(self, publish_mock):
+    def test_crear_supervision_programa_eventos_resumidos(self, publish_mock, active_filter_mock):
         supervision = SimpleNamespace(
             id=91,
             instalacion_id=12,
@@ -30,6 +32,7 @@ class SupervisionLiveEventTests(SimpleTestCase):
         serializer.save.return_value = supervision
 
         SupervisionViewSet().perform_create(serializer)
+        active_filter_mock.return_value.delete.assert_called_once()
 
         event_types = [call.args[0] for call in publish_mock.call_args_list]
         self.assertEqual(event_types, [
@@ -84,6 +87,9 @@ class SupervisionStartTests(TestCase):
         self.assertEqual(response.data["latitud"], -33.4489)
         self.assertEqual(response.data["fecha"], "2026-08-08")
         self.assertEqual(response.data["hora_inicio"], "15:42:10")
+        active = self.supervisor.supervision_activa
+        self.assertEqual(active.instalacion, self.instalacion)
+        self.assertEqual(active.hora_inicio, time(15, 42, 10))
         publish_mock.assert_called_once()
         self.assertEqual(publish_mock.call_args.args[0], "supervision.started")
 
@@ -94,3 +100,24 @@ class SupervisionStartTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_recupera_supervision_activa_del_usuario(self):
+        self.client.post(
+            "/api/supervision/supervisiones/iniciar/",
+            {
+                "instalacion": self.instalacion.id,
+                "latitud": -33.4489,
+                "longitud": -70.6693,
+                "fecha": "2026-08-08",
+                "hora_inicio": "15:42:10",
+            },
+            format="json",
+        )
+        response = self.client.get("/api/supervision/supervisiones/activa/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["instalacion_detalle"]["nombre"], "Planta Norte")
+        self.assertEqual(response.data["hora_inicio"], "15:42:10")
+
+        delete_response = self.client.delete("/api/supervision/supervisiones/activa/")
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertFalse(SupervisionActiva.objects.filter(supervisor=self.supervisor).exists())
