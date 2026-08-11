@@ -1,5 +1,9 @@
 from datetime import timedelta
+from pathlib import Path
 
+from botocore.exceptions import ClientError
+from django.conf import settings
+from django.http import FileResponse, Http404, StreamingHttpResponse
 from django.db.models import Count
 from django.db.models.functions import TruncDate
 from django.utils import timezone
@@ -15,6 +19,7 @@ from .models import AnalyticsEvent, Promotion, SiteImage, SiteText
 from .permissions import IsVivadentAdmin
 from .serializers import AnalyticsEventSerializer, PromotionSerializer, SiteImageSerializer, SiteTextSerializer, VivadentTokenSerializer
 from .services.storage import save_uploaded_image
+from backend_inout.utils.r2_client import get_r2_client
 
 
 class PublicEventThrottle(AnonRateThrottle):
@@ -78,6 +83,34 @@ class PublicContentView(APIView):
             "images": SiteImageSerializer(SiteImage.objects.all(), many=True).data,
             "texts": SiteTextSerializer(SiteText.objects.all(), many=True).data,
         })
+
+
+class PublicMediaView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request, key):
+        if not key.startswith("vivadent/images/") or ".." in Path(key).parts:
+            raise Http404
+        if all([settings.R2_ENDPOINT_URL, settings.R2_ACCESS_KEY_ID, settings.R2_SECRET_ACCESS_KEY, settings.R2_BUCKET_NAME]):
+            try:
+                item = get_r2_client().get_object(Bucket=settings.R2_BUCKET_NAME, Key=key)
+            except ClientError as error:
+                if error.response.get("Error", {}).get("Code") in {"NoSuchKey", "404"}:
+                    raise Http404 from error
+                raise
+            response = StreamingHttpResponse(item["Body"].iter_chunks(chunk_size=64 * 1024), content_type=item.get("ContentType") or "application/octet-stream")
+            if item.get("ContentLength") is not None:
+                response["Content-Length"] = item["ContentLength"]
+        else:
+            media_root = settings.MEDIA_ROOT.resolve()
+            local_path = (media_root / key).resolve()
+            if media_root not in local_path.parents or not local_path.is_file():
+                raise Http404
+            response = FileResponse(local_path.open("rb"))
+        response["Cache-Control"] = "public, max-age=86400, immutable"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 class TrackEventView(APIView):

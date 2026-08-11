@@ -1,3 +1,8 @@
+import tempfile
+from pathlib import Path
+
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
@@ -32,3 +37,22 @@ class VivadentApiTests(APITestCase):
         response = self.client.post("/api/vivadent/public/events/", {"event_type": "click", "section": "promociones", "target": "whatsapp", "session_id": "abc-123", "device": "mobile"})
         self.assertEqual(response.status_code, 201)
         self.assertEqual(AnalyticsEvent.objects.count(), 1)
+
+    def test_uploaded_media_is_public_only_under_vivadent_prefix(self):
+        self.login()
+        with tempfile.TemporaryDirectory() as media_root, override_settings(
+            MEDIA_ROOT=Path(media_root),
+            R2_ENDPOINT_URL="",
+            R2_ACCESS_KEY_ID="",
+            R2_SECRET_ACCESS_KEY="",
+            R2_BUCKET_NAME="",
+        ):
+            item = self.client.post("/api/vivadent/images/", {"key": "hero", "name": "Portada", "section": "Inicio", "image_url": "https://example.com/placeholder.jpg"})
+            image = SimpleUploadedFile("hero.jpg", b"fake-jpeg-content", content_type="image/jpeg")
+            uploaded = self.client.post(f"/api/vivadent/images/{item.data['id']}/upload/", {"image": image}, format="multipart")
+            self.assertEqual(uploaded.status_code, 200)
+            self.client.credentials()
+            response = self.client.get(uploaded.data["image_url"])
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Cache-Control"], "public, max-age=86400, immutable")
+            self.assertEqual(self.client.get("/api/vivadent/public/media/documentos/private.pdf").status_code, 404)
