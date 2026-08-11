@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'inventario',
     'amonestaciones',
     'postulaciones',
+    'google_reviews',
 ]
 
 REST_FRAMEWORK = {
@@ -177,6 +178,11 @@ POSTULACIONES_DOCUMENT_MAX_SIZE = int(os.getenv("POSTULACIONES_DOCUMENT_MAX_SIZE
 POSTULACIONES_MAX_PREGUNTAS = int(os.getenv("POSTULACIONES_MAX_PREGUNTAS", 10))
 POSTULACIONES_CONSENT_VERSION = os.getenv("POSTULACIONES_CONSENT_VERSION", "2026-01")
 POSTULACIONES_ADMIN_URL = os.getenv("POSTULACIONES_ADMIN_URL", "https://admin.inout.cl")
+
+# Google Places (la clave nunca debe enviarse al frontend)
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "").strip()
+GOOGLE_PLACE_ID = os.getenv("GOOGLE_PLACE_ID", "").strip()
+GOOGLE_REVIEWS_CACHE_SECONDS = int(os.getenv("GOOGLE_REVIEWS_CACHE_SECONDS", "21600"))
 
 # Correo SMTP para alertas de inventario
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
