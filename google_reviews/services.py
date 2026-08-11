@@ -8,7 +8,8 @@ from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
 
 
-GOOGLE_REVIEWS_CACHE_KEY = "google-reviews:v1"
+GOOGLE_REVIEWS_CACHE_KEY = "google-reviews:v2"
+GOOGLE_REVIEWS_MIN_RATING = 4
 GOOGLE_PLACES_FIELDS = (
     "displayName,rating,userRatingCount,reviews,googleMapsUri"
 )
@@ -31,6 +32,11 @@ def _normalized_review(review):
         "publish_time": review.get("publishTime"),
         "google_maps_url": review.get("googleMapsUri"),
     }
+
+
+def _is_positive_review(review):
+    rating = review.get("rating")
+    return isinstance(rating, (int, float)) and rating >= GOOGLE_REVIEWS_MIN_RATING
 
 
 def get_google_reviews():
@@ -72,7 +78,11 @@ def get_google_reviews():
         "rating": place.get("rating"),
         "user_rating_count": place.get("userRatingCount", 0),
         "google_maps_url": place.get("googleMapsUri"),
-        "reviews": [_normalized_review(review) for review in place.get("reviews", [])],
+        "reviews": [
+            _normalized_review(review)
+            for review in place.get("reviews", [])
+            if _is_positive_review(review)
+        ],
     }
     cache.set(GOOGLE_REVIEWS_CACHE_KEY, payload, settings.GOOGLE_REVIEWS_CACHE_SECONDS)
     return payload
