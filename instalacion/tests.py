@@ -60,6 +60,13 @@ class ZonaApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("zona", response.data)
 
+    def test_instalacion_expone_nombre_legible_de_zona(self):
+        instalacion = self.crear_instalacion()
+        response = self.client.get(f"/api/instalaciones/{instalacion.id}/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["zona"], "centro")
+        self.assertEqual(response.data["zona_nombre"], "Centro")
+
     def test_admin_muestra_catalogo_de_zonas_como_dropdown(self):
         Zona.objects.create(codigo="costa", nombre="Costa")
         form = InstalacionAdminForm()

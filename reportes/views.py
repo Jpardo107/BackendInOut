@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import threading
+from io import BytesIO
 
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -16,7 +17,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from documentacion.services.r2_storage import delete_document, upload_document
+from documentacion.services.r2_storage import delete_document, download_document_to_fileobj, upload_document
 from backend_inout.live_events import schedule_report_event
 
 from .models import (
@@ -443,6 +444,39 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
                 logger.exception("El reporte fue eliminado, pero no se pudo borrar el archivo R2 %s", key)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["get"], url_path=r"imagenes/(?P<imagen_id>[^/.]+)")
+    def imagen(self, request, pk=None, imagen_id=None):
+        reporte = self.get_object()
+        if not user_can_access_instalacion(request.user, reporte.instalacion):
+            raise PermissionDenied("No tienes acceso a esta instalacion.")
+
+        try:
+            imagen = reporte.imagenes.get(pk=imagen_id)
+        except (ImagenReporteInforme.DoesNotExist, TypeError, ValueError):
+            return Response({"detail": "La imagen no existe."}, status=status.HTTP_404_NOT_FOUND)
+
+        archivo = BytesIO()
+        try:
+            download_document_to_fileobj(imagen.storage_key, archivo)
+        except Exception as exc:
+            logger.exception("Error descargando imagen de reporte desde R2")
+            return _error_response(
+                "No se pudo recuperar la imagen del reporte",
+                "r2_download",
+                exc,
+                status.HTTP_502_BAD_GATEWAY,
+            )
+
+        archivo.seek(0)
+        response = FileResponse(
+            archivo,
+            content_type=imagen.mime_type or "application/octet-stream",
+            as_attachment=False,
+            filename=imagen.nombre_original or f"imagen-{imagen.id}",
+        )
+        response["Cache-Control"] = "private, max-age=300"
+        return response
 
     @action(detail=True, methods=["get"], url_path="word")
     def word(self, request, pk=None):

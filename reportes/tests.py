@@ -2,7 +2,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import QueryDict
 from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 from zipfile import ZipFile
 from io import BytesIO
 
@@ -125,6 +125,19 @@ class ReporteTextosUpdateTests(TestCase):
         self.assertEqual(self.reporte.descripcion_hechos, "Texto corregido")
         self.assertEqual(self.imagen.descripcion, "Foto corregida")
         self.assertEqual(self.reporte.instalacion, self.instalacion)
+
+    @patch("reportes.views.download_document_to_fileobj")
+    def test_descarga_imagen_mediante_backend_sin_depender_de_cors_r2(self, download_mock):
+        download_mock.side_effect = lambda key, output: output.write(b"image-bytes")
+
+        response = self.client.get(
+            f"/api/reportes-informes/{self.reporte.id}/imagenes/{self.imagen.id}/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/octet-stream")
+        self.assertEqual(b"".join(response.streaming_content), b"image-bytes")
+        download_mock.assert_called_once_with(self.imagen.storage_key, ANY)
 
     def test_preinforme_rechaza_campos_exclusivos_de_vulnerabilidades(self):
         response = self.client.patch(

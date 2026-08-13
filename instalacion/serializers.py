@@ -26,10 +26,14 @@ class ZonaSerializer(serializers.ModelSerializer):
 
 class InstalacionSerializer(serializers.ModelSerializer):
     cantidad_guardias = serializers.IntegerField(read_only=True)
+    zona_nombre = serializers.SerializerMethodField()
 
     class Meta:
         model = Instalacion
         fields = '__all__'
+
+    def get_zona_nombre(self, obj):
+        return Zona.objects.filter(codigo=obj.zona).values_list("nombre", flat=True).first() or obj.zona
 
     def validate_zona(self, value):
         codigo = str(value or "").strip().lower()
