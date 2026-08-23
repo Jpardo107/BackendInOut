@@ -278,6 +278,7 @@ class PostulacionAdminDetalleSerializer(PostulacionPublicaSerializer):
     preferencias = PreferenciaAdminSerializer(many=True, read_only=True)
     evaluacion = EvaluacionAdminSerializer(read_only=True)
     reclutador_nombre = serializers.SerializerMethodField()
+    vacante_recomendada_detalle = VacanteAdminSerializer(source="vacante_recomendada", read_only=True)
 
     class Meta(PostulacionPublicaSerializer.Meta):
         exclude = ("acceso_hash",)

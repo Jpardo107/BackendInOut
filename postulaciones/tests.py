@@ -221,8 +221,10 @@ class PostulacionesApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, 200)
         textos = [item["texto"] for item in response.data["preguntas"]]
-        self.assertEqual(len(textos), 9)
+        self.assertEqual(len(textos), 6)
         self.assertEqual(len(textos), len(set(textos)))
+        tipos = [item["tipo_instalacion_nombre"] for item in response.data["preguntas"]]
+        self.assertEqual({tipo: tipos.count(tipo) for tipo in set(tipos)}, {"General": 2, "Bodega": 2, "Condominio": 2})
 
     def test_qr_requiere_usuario_autorizado_y_rechaza_revocado(self):
         qr = TokenQrPostulacion.objects.create(postulacion=self.postulacion)

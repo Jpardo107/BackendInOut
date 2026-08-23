@@ -36,6 +36,7 @@ from .models import (
     VacanteGuardia,
 )
 from .permissions import IsPostulacionesAdmin
+from .services.perfil_ia import analizar_perfil_con_ia
 from .serializers import (
     CursoSerializer,
     DocumentoAdminSerializer,
@@ -163,7 +164,7 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
             nueva = activa
         else:
             anterior = PostulacionGuardia.objects.filter(rut=rut, email__iexact=clave.email).order_by("-creado_en").first()
-            omitidos = {"id", "id_publico", "codigo", "acceso_hash", "estado", "paso_actual", "declaracion_veracidad", "consentimiento_datos", "version_consentimiento", "consentimiento_en", "finalizada_en", "reclutador_asignado", "creado_en", "actualizado_en"}
+            omitidos = {"id", "id_publico", "codigo", "acceso_hash", "estado", "paso_actual", "declaracion_veracidad", "consentimiento_datos", "version_consentimiento", "consentimiento_en", "finalizada_en", "reclutador_asignado", "score_perfil", "resumen_ia", "analizado_en", "vacante_recomendada", "creado_en", "actualizado_en"}
             campos = [field.name for field in PostulacionGuardia._meta.fields if field.name not in omitidos]
             nueva = PostulacionGuardia.objects.create(**{field: getattr(anterior, field) for field in campos}, acceso_hash=token_hash(raw_token), paso_actual=3)
             for relation, model in (("estudios", AntecedenteAcademicoPostulante), ("cursos", CursoPostulante), ("experiencias", ExperienciaLaboralPostulante), ("documentos", DocumentoPostulacion)):
@@ -321,12 +322,27 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
                 TipoInstalacionLaboral.objects.filter(vacantes__interesados__postulacion=postulacion)
                 .distinct()
             )
-            generales = list(PreguntaPostulacion.objects.filter(activo=True, tipo_instalacion__slug="general").order_by("orden", "id")[:3])
-            seleccionadas = list(generales)
-            for tipo in tipos:
-                candidatas = list(PreguntaPostulacion.objects.filter(activo=True, tipo_instalacion=tipo).exclude(id__in=[p.id for p in seleccionadas]).order_by("orden", "id")[:3])
+            general = TipoInstalacionLaboral.objects.filter(slug="general", activo=True).first()
+            categorias = [item for item in [general, *tipos] if item]
+            categorias = list({item.id: item for item in categorias}.values())
+            total_preguntas = 6
+            base, extra = divmod(total_preguntas, len(categorias))
+            seleccionadas = []
+            for category_index, tipo in enumerate(categorias):
+                cantidad = base + (1 if category_index < extra else 0)
+                candidatas = list(
+                    PreguntaPostulacion.objects.filter(activo=True, tipo_instalacion=tipo)
+                    .exclude(id__in=[item.id for item in seleccionadas])
+                    .order_by("?")[:cantidad]
+                )
                 seleccionadas.extend(candidatas)
-            seleccionadas = seleccionadas[: getattr(settings, "POSTULACIONES_MAX_PREGUNTAS", 10)]
+            if len(seleccionadas) < total_preguntas:
+                faltantes = list(
+                    PreguntaPostulacion.objects.filter(activo=True)
+                    .exclude(id__in=[item.id for item in seleccionadas])
+                    .order_by("?")[:total_preguntas - len(seleccionadas)]
+                )
+                seleccionadas.extend(faltantes)
             for index, pregunta in enumerate(seleccionadas, start=1):
                 PreguntaAsignadaEvaluacion.objects.create(
                     evaluacion=evaluacion, pregunta_origen=pregunta, texto=pregunta.texto,
@@ -506,6 +522,70 @@ class AdminPostulacionViewSet(viewsets.ModelViewSet):
         if old != postulacion.estado:
             audit(postulacion, "cambio_estado", request, {"desde": old, "hasta": postulacion.estado})
         return response
+
+    @action(detail=True, methods=["post"], url_path="analizar-perfil")
+    def analizar_perfil(self, request, pk=None):
+        postulacion = self.get_object()
+        preferencia = postulacion.preferencias.select_related("vacante__tipo_instalacion").order_by("orden_preferencia").first()
+        vacante = preferencia.vacante if preferencia else None
+        criterio_cercania = "vacante_elegida"
+        if not vacante:
+            candidatas = VacanteGuardia.objects.filter(
+                estado="publicado", permite_postulaciones=True, cantidad_cupos__gt=models.F("cupos_ocupados"),
+            ).select_related("tipo_instalacion").order_by("prioridad", "-creado_en")
+            vacante = candidatas.filter(comuna_publica__iexact=postulacion.comuna_residencia).first()
+            if vacante:
+                criterio_cercania = "misma_comuna"
+            else:
+                vacante = candidatas.first()
+                criterio_cercania = "sin_coincidencia_comunal"
+
+        requisitos = []
+        if vacante:
+            if vacante.requiere_os10_vigente:
+                requisitos.append(postulacion.estado_os10 == "vigente")
+            if vacante.requiere_licencia:
+                requisitos.append(postulacion.tiene_licencia)
+            if vacante.requiere_movilizacion:
+                requisitos.append(postulacion.movilizacion_propia)
+        score_requisitos = round(20 * sum(requisitos) / len(requisitos)) if requisitos else 20
+        jornada = (vacante.jornada if vacante else "").lower()
+        turno = (vacante.sistema_turno if vacante else "").lower()
+        jornada_ok = ("4x4" in jornada and postulacion.disponible_4x4) or ("5x2" in jornada and postulacion.disponible_5x2) or not jornada
+        turno_ok = ("día" in turno and postulacion.disponible_dia) or ("dia" in turno and postulacion.disponible_dia) or ("noche" in turno and postulacion.disponible_noche) or ("rotativo" in turno and postulacion.disponible_dia and postulacion.disponible_noche) or not turno
+        score_disponibilidad = (10 if jornada_ok else 0) + (10 if turno_ok else 0)
+        misma_comuna = bool(vacante and vacante.comuna_publica.strip().lower() == postulacion.comuna_residencia.strip().lower())
+        score_cercania = 20 if misma_comuna else 5
+
+        try:
+            ia = analizar_perfil_con_ia(postulacion, vacante)
+        except Exception as exc:
+            logger.exception("No fue posible analizar la postulación %s con OpenAI", postulacion.id)
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        total = min(100, score_requisitos + score_disponibilidad + score_cercania + ia["score_curriculum"] + ia["score_evaluacion"])
+        score = {
+            "total": total,
+            "requisitos": score_requisitos,
+            "disponibilidad": score_disponibilidad,
+            "cercania": score_cercania,
+            "curriculum_ia": ia["score_curriculum"],
+            "evaluacion_ia": ia["score_evaluacion"],
+            "criterio_cercania": criterio_cercania,
+            "fortalezas": ia["fortalezas"],
+            "aspectos_a_validar": ia["aspectos_a_validar"],
+        }
+        postulacion.score_perfil = score
+        postulacion.resumen_ia = ia["resumen"]
+        postulacion.analizado_en = timezone.now()
+        postulacion.vacante_recomendada = vacante
+        postulacion.save(update_fields=("score_perfil", "resumen_ia", "analizado_en", "vacante_recomendada", "actualizado_en"))
+        return Response({
+            "score_perfil": score,
+            "resumen_ia": postulacion.resumen_ia,
+            "analizado_en": postulacion.analizado_en,
+            "vacante_recomendada": VacanteAdminSerializer(vacante).data if vacante else None,
+        })
 
     def perform_destroy(self, instance):
         # Los registros relacionados se eliminan por CASCADE; los archivos en

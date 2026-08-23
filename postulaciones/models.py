@@ -70,6 +70,13 @@ class PostulacionGuardia(models.Model):
     version_consentimiento = models.CharField(max_length=30, blank=True)
     consentimiento_en = models.DateTimeField(null=True, blank=True)
     finalizada_en = models.DateTimeField(null=True, blank=True)
+    score_perfil = models.JSONField(default=dict, blank=True)
+    resumen_ia = models.TextField(blank=True)
+    analizado_en = models.DateTimeField(null=True, blank=True)
+    vacante_recomendada = models.ForeignKey(
+        "VacanteGuardia", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="postulantes_recomendados",
+    )
     reclutador_asignado = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="postulaciones_asignadas",
