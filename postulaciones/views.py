@@ -496,7 +496,7 @@ class AdminPostulacionViewSet(viewsets.ModelViewSet):
         "estudios", "cursos", "experiencias", "preferencias__vacante__instalacion",
         "documentos",
     )
-    http_method_names = ["get", "patch", "delete", "head", "options"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_serializer_class(self):
         return PostulacionAdminDetalleSerializer if self.action in ("retrieve", "partial_update", "verificar_qr") else PostulacionAdminListSerializer

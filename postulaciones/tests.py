@@ -163,6 +163,29 @@ class PostulacionesApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    @patch("postulaciones.views.analizar_perfil_con_ia")
+    def test_admin_puede_analizar_perfil_por_post(self, analizar_mock):
+        analizar_mock.return_value = {
+            "score_curriculum": 15,
+            "score_evaluacion": 16,
+            "resumen": "Perfil compatible sujeto a revisión humana.",
+            "fortalezas": ["Experiencia"],
+            "aspectos_a_validar": ["Referencias"],
+        }
+        cargo = Cargo.objects.create(nombre="Encargado RRHH")
+        user = get_user_model().objects.create_user(
+            username="rrhh.analisis", password="test-pass", nombres="RRHH",
+            apellidos="Análisis", rut="11111111-1", email="analisis@example.com", cargo=cargo,
+        )
+        self.client.force_authenticate(user=user)
+        response = self.client.post(
+            f"/api/postulaciones/admin/postulaciones/{self.postulacion.id}/analizar-perfil/",
+            {}, format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["score_perfil"]["total"], 56)
+        analizar_mock.assert_called_once()
+
     def test_guarda_primer_paso_completo(self):
         payload = {
             "nombres": "Ana María",
