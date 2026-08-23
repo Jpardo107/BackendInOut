@@ -7,6 +7,8 @@ from rest_framework.test import APITestCase
 from instalacion.models import Instalacion
 from user.models import Cargo
 from .models import (
+    ClaveTemporalPostulacion,
+    DocumentoPostulacion,
     PostulacionGuardia,
     EvaluacionPostulacion,
     PreferenciaVacantePostulante,
@@ -59,6 +61,10 @@ class PostulacionesApiTests(APITestCase):
         self.assertEqual(response.data["preferencias"], [])
 
         EvaluacionPostulacion.objects.create(postulacion=self.postulacion)
+        DocumentoPostulacion.objects.create(
+            postulacion=self.postulacion, tipo_documento="curriculum", nombre_original="cv-ana.pdf",
+            storage_key="postulaciones/prueba/cv.pdf", mime_type="application/pdf", size=100,
+        )
         final = self.client.post(
             f"/api/postulaciones/publicas/postulaciones/{self.postulacion.id_publico}/finalizar/",
             {"declaracion_veracidad": True, "consentimiento_datos": True},
@@ -67,6 +73,36 @@ class PostulacionesApiTests(APITestCase):
         self.assertEqual(final.status_code, 200, final.data)
         self.postulacion.refresh_from_db()
         self.assertEqual(self.postulacion.estado, "banco_postulantes")
+
+    @patch("postulaciones.views.send_mail")
+    def test_clave_temporal_crea_nueva_postulacion_con_datos_y_documentos(self, send_mail_mock):
+        self.postulacion.estado = "finalizada"
+        self.postulacion.save(update_fields=("estado",))
+        documento = DocumentoPostulacion.objects.create(
+            postulacion=self.postulacion, tipo_documento="curriculum", nombre_original="Curriculum Ana.pdf",
+            storage_key="postulaciones/ana/cv.pdf", mime_type="application/pdf", size=123,
+        )
+        solicitud = self.client.post(
+            "/api/postulaciones/publicas/postulaciones/solicitar-clave/",
+            {"rut": "18.935.687-0"}, format="json",
+        )
+        self.assertEqual(solicitud.status_code, 200, solicitud.data)
+        send_mail_mock.assert_called_once()
+        clave = ClaveTemporalPostulacion.objects.get(rut="189356870")
+        clave.codigo_hash = token_hash("123456")
+        clave.save(update_fields=("codigo_hash",))
+
+        verificacion = self.client.post(
+            "/api/postulaciones/publicas/postulaciones/verificar-clave/",
+            {"rut": "18.935.687-0", "codigo": "123456"}, format="json",
+        )
+        self.assertEqual(verificacion.status_code, 200, verificacion.data)
+        self.assertEqual(verificacion.data["resume_at"], "vacantes")
+        nueva = PostulacionGuardia.objects.get(id_publico=verificacion.data["postulacion"]["id_publico"])
+        self.assertNotEqual(nueva.pk, self.postulacion.pk)
+        copia = nueva.documentos.get()
+        self.assertEqual(copia.nombre_original, "Curriculum Ana.pdf")
+        self.assertEqual(copia.storage_key, documento.storage_key)
 
     def test_cors_permite_origen_y_header_token_postulacion(self):
         response = self.client.options(

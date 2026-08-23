@@ -4,6 +4,7 @@ import secrets
 import uuid
 
 from django.conf import settings
+from django.core.mail import send_mail
 from django.db import IntegrityError, models, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -18,6 +19,7 @@ from documentacion.services.r2_storage import delete_document, upload_document
 from .models import (
     AntecedenteAcademicoPostulante,
     CursoPostulante,
+    ClaveTemporalPostulacion,
     DocumentoPostulacion,
     EntrevistaPostulacion,
     EvaluacionPostulacion,
@@ -117,6 +119,61 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
             {"postulacion": PostulacionPublicaSerializer(postulacion).data, "access_token": raw_token},
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=False, methods=["post"], url_path="solicitar-clave")
+    def solicitar_clave(self, request):
+        from .serializers import validar_rut_chileno
+        rut = validar_rut_chileno(request.data.get("rut", ""))
+        anterior = PostulacionGuardia.objects.filter(rut=rut).exclude(email="").order_by("-creado_en").first()
+        if not anterior:
+            raise ValidationError({"rut": "No encontramos postulaciones anteriores para este RUT."})
+        codigo = f"{secrets.randbelow(1_000_000):06d}"
+        ClaveTemporalPostulacion.objects.filter(rut=rut, usada_en__isnull=True).update(usada_en=timezone.now())
+        ClaveTemporalPostulacion.objects.create(
+            rut=rut, email=anterior.email, codigo_hash=token_hash(codigo),
+            expira_en=timezone.now() + timezone.timedelta(minutes=10),
+        )
+        send_mail(
+            "Tu clave temporal de Postulaciones INOUT",
+            f"Tu clave temporal es {codigo}. Tiene una vigencia de 10 minutos.",
+            getattr(settings, "DEFAULT_FROM_EMAIL", None), [anterior.email], fail_silently=False,
+        )
+        local, _, domain = anterior.email.partition("@")
+        return Response({"detail": "Enviamos una clave temporal al correo registrado.", "email": f"{local[:2]}{'*' * max(len(local) - 2, 2)}@{domain}"})
+
+    @action(detail=False, methods=["post"], url_path="verificar-clave")
+    def verificar_clave(self, request):
+        from .serializers import validar_rut_chileno
+        rut = validar_rut_chileno(request.data.get("rut", ""))
+        codigo = str(request.data.get("codigo", "")).strip()
+        clave = ClaveTemporalPostulacion.objects.filter(rut=rut, usada_en__isnull=True).first()
+        if not clave or clave.expira_en <= timezone.now() or clave.intentos >= 5:
+            raise ValidationError({"codigo": "La clave venció. Solicita una nueva."})
+        if not secrets.compare_digest(clave.codigo_hash, token_hash(codigo)):
+            clave.intentos += 1
+            clave.save(update_fields=("intentos",))
+            raise ValidationError({"codigo": "La clave ingresada no es correcta."})
+        clave.usada_en = timezone.now()
+        clave.save(update_fields=("usada_en",))
+        activa = PostulacionGuardia.objects.filter(rut=rut, estado__in=EDITABLE_STATES).first()
+        raw_token = secrets.token_urlsafe(32)
+        if activa:
+            activa.acceso_hash = token_hash(raw_token)
+            activa.save(update_fields=("acceso_hash", "actualizado_en"))
+            nueva = activa
+        else:
+            anterior = PostulacionGuardia.objects.filter(rut=rut, email__iexact=clave.email).order_by("-creado_en").first()
+            omitidos = {"id", "id_publico", "codigo", "acceso_hash", "estado", "paso_actual", "declaracion_veracidad", "consentimiento_datos", "version_consentimiento", "consentimiento_en", "finalizada_en", "reclutador_asignado", "creado_en", "actualizado_en"}
+            campos = [field.name for field in PostulacionGuardia._meta.fields if field.name not in omitidos]
+            nueva = PostulacionGuardia.objects.create(**{field: getattr(anterior, field) for field in campos}, acceso_hash=token_hash(raw_token), paso_actual=3)
+            for relation, model in (("estudios", AntecedenteAcademicoPostulante), ("cursos", CursoPostulante), ("experiencias", ExperienciaLaboralPostulante), ("documentos", DocumentoPostulacion)):
+                for item in getattr(anterior, relation).all():
+                    values = {field.name: getattr(item, field.name) for field in model._meta.fields if field.name not in {"id", "postulacion", "creado_en", "validado_por", "validado_en"}}
+                    if model is DocumentoPostulacion:
+                        values.update(curso=None, estado="pendiente_revision", observaciones="")
+                    model.objects.create(postulacion=nueva, **values)
+            audit(nueva, "postulacion_reutilizada", request, {"origen": anterior.codigo})
+        return Response({"postulacion": PostulacionPublicaSerializer(nueva).data, "access_token": raw_token, "resume_at": "vacantes"})
 
     @action(detail=False, methods=["post"], url_path="recuperar")
     def recuperar(self, request):
@@ -346,7 +403,8 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
             documento = postulacion.documentos.get(pk=documento_id)
         except DocumentoPostulacion.DoesNotExist:
             raise NotFound("Documento no encontrado.")
-        delete_document(documento.storage_key)
+        if not DocumentoPostulacion.objects.filter(storage_key=documento.storage_key).exclude(pk=documento.pk).exists():
+            delete_document(documento.storage_key)
         documento.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -354,6 +412,18 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
     def resumen(self, request, pk=None):
         postulacion = self._get_postulacion(request, pk)
         return Response(PostulacionPublicaSerializer(postulacion).data)
+
+    @action(detail=True, methods=["delete"], url_path="cancelar")
+    def cancelar(self, request, pk=None):
+        postulacion = self._get_postulacion(request, pk, editable=True)
+        for documento in postulacion.documentos.all():
+            if not DocumentoPostulacion.objects.filter(storage_key=documento.storage_key).exclude(postulacion=postulacion).exists():
+                try:
+                    delete_document(documento.storage_key)
+                except Exception:
+                    logger.exception("No fue posible retirar el archivo al cancelar la postulación %s", postulacion.id_publico)
+        postulacion.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"], url_path="finalizar")
     def finalizar(self, request, pk=None):
@@ -369,6 +439,8 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
             pendientes = True
         if pendientes:
             errores["evaluacion"] = "Responde todas las preguntas obligatorias."
+        if not postulacion.documentos.exists():
+            errores["documentos"] = "Debes subir al menos un documento antes de enviar tu postulación."
         if not request.data.get("declaracion_veracidad") or not request.data.get("consentimiento_datos"):
             errores["consentimiento"] = "Debes aceptar la declaración y el tratamiento de datos."
         if errores:
@@ -426,6 +498,8 @@ class AdminPostulacionViewSet(viewsets.ModelViewSet):
         # Los registros relacionados se eliminan por CASCADE; los archivos en
         # almacenamiento externo deben retirarse explícitamente.
         for documento in instance.documentos.all():
+            if DocumentoPostulacion.objects.filter(storage_key=documento.storage_key).exclude(postulacion=instance).exists():
+                continue
             try:
                 delete_document(documento.storage_key)
             except Exception:

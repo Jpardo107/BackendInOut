@@ -247,9 +247,7 @@ class DocumentoAdminSerializer(serializers.ModelSerializer):
 
     def get_url(self, obj):
         try:
-            extension = obj.nombre_original.rsplit(".", 1)[-1] if "." in obj.nombre_original else ""
-            filename = f"{obj.nombre_documento}.{extension}" if extension else obj.nombre_documento
-            return generate_signed_url(obj.storage_key, expires=600, filename=filename, disposition="inline")
+            return generate_signed_url(obj.storage_key, expires=600, filename=obj.nombre_original, disposition="inline")
         except Exception:
             return ""
 

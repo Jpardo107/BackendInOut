@@ -1,4 +1,5 @@
 from io import BytesIO
+from pathlib import Path
 
 from docx import Document
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
@@ -14,6 +15,16 @@ from reportes.models import ReporteInforme
 BRAND = "193040"
 LIGHT_BORDER = "DEE4E8"
 CONTENT_WIDTH_CM = 16.6
+
+
+def _logo_path():
+    project_root = Path(__file__).resolve().parents[3]
+    candidates = (
+        project_root / "frontend supervision" / "inout-frontend" / "public" / "logo_horizontal.png",
+        project_root / "logo_horizontal.png",
+        project_root / "logo_new.jpeg",
+    )
+    return next((path for path in candidates if path.exists()), None)
 
 
 def _shade(cell, color):
@@ -173,6 +184,80 @@ def _add_page_number(paragraph):
     run._r.addnext(field)
 
 
+def _add_watermark(section, logo_path):
+    if not logo_path:
+        return
+    paragraph = section.header.paragraphs[0]
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = paragraph.add_run()
+    inline = run.add_picture(str(logo_path), width=Cm(12))._inline
+    inline.tag = qn("wp:anchor")
+    inline.set("distT", "0")
+    inline.set("distB", "0")
+    inline.set("distL", "0")
+    inline.set("distR", "0")
+    inline.set("simplePos", "0")
+    inline.set("relativeHeight", "0")
+    inline.set("behindDoc", "1")
+    inline.set("locked", "0")
+    inline.set("layoutInCell", "1")
+    inline.set("allowOverlap", "1")
+
+    simple_pos = OxmlElement("wp:simplePos")
+    simple_pos.set("x", "0")
+    simple_pos.set("y", "0")
+    position_h = OxmlElement("wp:positionH")
+    position_h.set("relativeFrom", "page")
+    position_h.append(OxmlElement("wp:align"))
+    position_h[0].text = "center"
+    position_v = OxmlElement("wp:positionV")
+    position_v.set("relativeFrom", "page")
+    position_v.append(OxmlElement("wp:align"))
+    position_v[0].text = "center"
+    wrap_none = OxmlElement("wp:wrapNone")
+    inline.insert(0, simple_pos)
+    inline.insert(1, position_h)
+    inline.insert(2, position_v)
+    inline.insert(3, wrap_none)
+
+    # La transparencia se aplica al bitmap completo dentro del documento.
+    blip = inline.find(".//" + qn("a:blip"))
+    if blip is not None:
+        alpha = OxmlElement("a:alphaModFix")
+        alpha.set("amt", "8000")
+        blip.append(alpha)
+
+
+def _add_document_closing(document, logo_path):
+    document.add_page_break()
+
+    informed = document.add_paragraph("Es cuanto se informa.")
+    informed.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    informed.paragraph_format.space_after = Pt(28)
+    informed.runs[0].font.size = Pt(13)
+
+    logo_paragraph = document.add_paragraph()
+    logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if logo_path:
+        logo_paragraph.add_run().add_picture(str(logo_path), width=Cm(6.3))
+
+    department = document.add_paragraph()
+    department.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    department.paragraph_format.space_before = Pt(8)
+    department.paragraph_format.space_after = Pt(48)
+    department_run = department.add_run("Departamento de Operaciones\nInOut")
+    department_run.bold = True
+    department_run.font.name = "Aptos Display"
+    department_run.font.size = Pt(16)
+
+    distribution = document.add_paragraph()
+    distribution.paragraph_format.keep_together = True
+    title = distribution.add_run("DISTRIBUCIÓN:\n")
+    title.bold = True
+    title.underline = True
+    distribution.add_run("1.  InOut Seguridad, Archivo\n2.  Cliente")
+
+
 def _add_image_block(document, image, index, include_recommendation):
     container = document.add_table(rows=1, cols=1)
     _set_table_width(container)
@@ -226,6 +311,8 @@ def generar_word_reporte(reporte):
     section.bottom_margin = Cm(1.8)
     section.left_margin = Cm(1.5)
     section.right_margin = Cm(1.5)
+    logo_path = _logo_path()
+    _add_watermark(section, logo_path)
 
     normal = document.styles["Normal"]
     normal.font.name = "Aptos"
@@ -306,6 +393,8 @@ def generar_word_reporte(reporte):
     if reporte.tipo_reporte == ReporteInforme.TIPO_VULNERABILIDADES and reporte.analisis_final_usuario:
         _heading(document, "Análisis final")
         _body(document, reporte.analisis_final_usuario)
+
+    _add_document_closing(document, logo_path)
 
     _add_page_number(section.footer.paragraphs[0])
     output = BytesIO()

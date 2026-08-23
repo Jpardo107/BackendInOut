@@ -262,7 +262,7 @@ class DocumentoPostulacion(models.Model):
     curso = models.ForeignKey(CursoPostulante, null=True, blank=True, on_delete=models.SET_NULL, related_name="documentos")
     tipo_documento = models.CharField(max_length=60, choices=TIPOS)
     nombre_original = models.CharField(max_length=255)
-    storage_key = models.CharField(max_length=500, unique=True)
+    storage_key = models.CharField(max_length=500, db_index=True)
     mime_type = models.CharField(max_length=120)
     size = models.PositiveIntegerField()
     estado = models.CharField(max_length=30, choices=ESTADOS, default="pendiente_revision")
@@ -275,6 +275,19 @@ class DocumentoPostulacion(models.Model):
     @property
     def nombre_documento(self):
         return self.get_tipo_documento_display()
+
+
+class ClaveTemporalPostulacion(models.Model):
+    rut = models.CharField(max_length=12, db_index=True)
+    email = models.EmailField()
+    codigo_hash = models.CharField(max_length=128)
+    expira_en = models.DateTimeField()
+    intentos = models.PositiveSmallIntegerField(default=0)
+    usada_en = models.DateTimeField(null=True, blank=True)
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-creada_en",)
 
 
 class TokenQrPostulacion(models.Model):
