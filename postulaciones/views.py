@@ -429,18 +429,31 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
     def finalizar(self, request, pk=None):
         postulacion = self._get_postulacion(request, pk, editable=True)
         errores = {}
+        if not postulacion.fecha_nacimiento:
+            errores["fecha_nacimiento"] = "La fecha de nacimiento es obligatoria."
+        if not postulacion.comuna_residencia.strip():
+            errores["comuna_residencia"] = "La comuna es obligatoria."
+        if postulacion.estado_os10 not in dict(PostulacionGuardia.OS10_ESTADOS):
+            errores["estado_os10"] = "Selecciona tu estado OS10."
+        if not (postulacion.disponible_4x4 or postulacion.disponible_5x2):
+            errores["jornada"] = "Selecciona al menos una jornada: 4x4 o 5x2."
+        if not (postulacion.disponible_dia or postulacion.disponible_noche):
+            errores["turno"] = "Selecciona al menos un turno: día o noche."
+        if not postulacion.sin_estudios and not postulacion.estudios.exists():
+            errores["estudios"] = "Agrega un estudio o indica que no tienes estudios para registrar."
+        if not postulacion.sin_experiencia and not postulacion.experiencias.exists():
+            errores["experiencia"] = "Agrega una experiencia o indica que no tienes experiencia laboral."
         if len(postulacion.presentacion.strip()) < 40:
             errores["presentacion"] = "Completa tu presentación personal."
         try:
-            pendientes = postulacion.evaluacion.preguntas_asignadas.filter(
-                obligatoria=True, respuesta__isnull=True
-            ).exists()
+            preguntas = postulacion.evaluacion.preguntas_asignadas.all()
+            pendientes = not preguntas.exists() or preguntas.filter(obligatoria=True, respuesta__isnull=True).exists()
         except EvaluacionPostulacion.DoesNotExist:
             pendientes = True
         if pendientes:
             errores["evaluacion"] = "Responde todas las preguntas obligatorias."
-        if not postulacion.documentos.exists():
-            errores["documentos"] = "Debes subir al menos un documento antes de enviar tu postulación."
+        if not postulacion.documentos.filter(tipo_documento="curriculum").exists():
+            errores["documentos"] = "Debes subir tu currículum antes de enviar la postulación."
         if not request.data.get("declaracion_veracidad") or not request.data.get("consentimiento_datos"):
             errores["consentimiento"] = "Debes aceptar la declaración y el tratamiento de datos."
         if errores:
@@ -592,6 +605,19 @@ class PreguntaAdminViewSet(viewsets.ModelViewSet):
     permission_classes = [IsPostulacionesAdmin]
     queryset = PreguntaPostulacion.objects.select_related("tipo_instalacion")
     serializer_class = PreguntaAdminSerializer
+
+    @action(detail=False, methods=["post"], url_path="carga-masiva")
+    def carga_masiva(self, request):
+        preguntas = request.data.get("preguntas", [])
+        if not isinstance(preguntas, list) or not preguntas:
+            raise ValidationError({"preguntas": "Incluye al menos una pregunta."})
+        if len(preguntas) > 500:
+            raise ValidationError({"preguntas": "Puedes cargar un máximo de 500 preguntas por archivo."})
+        serializer = self.get_serializer(data=preguntas, many=True)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            creadas = serializer.save()
+        return Response(self.get_serializer(creadas, many=True).data, status=status.HTTP_201_CREATED)
 
 
 class TipoInstalacionAdminViewSet(viewsets.ModelViewSet):

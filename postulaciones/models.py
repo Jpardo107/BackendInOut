@@ -58,6 +58,8 @@ class PostulacionGuardia(models.Model):
     disponible_5x2 = models.BooleanField(default=False)
     otras_disponibilidades = models.JSONField(default=list, blank=True)
     presentacion = models.TextField(blank=True, max_length=1500)
+    sin_estudios = models.BooleanField(default=False)
+    sin_experiencia = models.BooleanField(default=False)
     estado_os10 = models.CharField(max_length=20, choices=OS10_ESTADOS, default="no_tiene")
     os10_vencimiento = models.DateField(null=True, blank=True)
     os10_numero = models.CharField(max_length=100, blank=True)

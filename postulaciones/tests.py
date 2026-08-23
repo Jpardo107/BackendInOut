@@ -13,6 +13,8 @@ from .models import (
     EvaluacionPostulacion,
     PreferenciaVacantePostulante,
     PreguntaPostulacion,
+    PreguntaAsignadaEvaluacion,
+    RespuestaPostulacion,
     TipoInstalacionLaboral,
     TokenQrPostulacion,
     VacanteGuardia,
@@ -43,6 +45,8 @@ class PostulacionesApiTests(APITestCase):
             telefono="+56912345678", email="ana@example.com",
             comuna_residencia="Maipú", acceso_hash=token_hash(self.raw_token),
             presentacion="Tengo experiencia en seguridad y buenas habilidades de comunicación.",
+            fecha_nacimiento="1990-05-20", disponible_4x4=True, disponible_dia=True,
+            sin_estudios=True, sin_experiencia=True,
         )
         self.headers = {"HTTP_X_POSTULACION_TOKEN": self.raw_token}
 
@@ -60,7 +64,12 @@ class PostulacionesApiTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["preferencias"], [])
 
-        EvaluacionPostulacion.objects.create(postulacion=self.postulacion)
+        evaluacion = EvaluacionPostulacion.objects.create(postulacion=self.postulacion)
+        asignada = PreguntaAsignadaEvaluacion.objects.create(
+            evaluacion=evaluacion, texto="Pregunta obligatoria", tipo_respuesta="texto_corto",
+            obligatoria=True, tipo_instalacion_nombre="General",
+        )
+        RespuestaPostulacion.objects.create(pregunta_asignada=asignada, respuesta="Respuesta")
         DocumentoPostulacion.objects.create(
             postulacion=self.postulacion, tipo_documento="curriculum", nombre_original="cv-ana.pdf",
             storage_key="postulaciones/prueba/cv.pdf", mime_type="application/pdf", size=100,
