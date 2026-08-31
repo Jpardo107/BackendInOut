@@ -6,6 +6,7 @@ from user.services.rut import normalizar_rut
 from .models import (
     AntecedenteAcademicoPostulante,
     CursoPostulante,
+    DestinatariosPostulacionZona,
     DocumentoPostulacion,
     EntrevistaPostulacion,
     EvaluacionPostulacion,
@@ -21,6 +22,7 @@ from .models import (
     TokenQrPostulacion,
     VacanteGuardia,
 )
+from instalacion.models import Zona
 
 
 def validar_rut_chileno(value):
@@ -63,6 +65,20 @@ class TipoInstalacionSerializer(serializers.ModelSerializer):
     class Meta:
         model = TipoInstalacionLaboral
         fields = ("id", "nombre", "slug", "activo", "orden")
+
+
+class DestinatariosPostulacionZonaSerializer(serializers.ModelSerializer):
+    zona = serializers.SlugRelatedField(slug_field="codigo", queryset=Zona.objects.all())
+    zona_nombre = serializers.CharField(source="zona.nombre", read_only=True)
+    correos = serializers.ListField(child=serializers.EmailField(), allow_empty=True)
+
+    class Meta:
+        model = DestinatariosPostulacionZona
+        fields = ("id", "zona", "zona_nombre", "correos", "actualizado_en")
+        read_only_fields = ("id", "actualizado_en")
+
+    def validate_correos(self, value):
+        return list(dict.fromkeys(correo.strip().lower() for correo in value))
 
 
 class EstudioSerializer(serializers.ModelSerializer):

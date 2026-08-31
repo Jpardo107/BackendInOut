@@ -19,6 +19,7 @@ from documentacion.services.r2_storage import delete_document, upload_document
 from .models import (
     AntecedenteAcademicoPostulante,
     CursoPostulante,
+    DestinatariosPostulacionZona,
     ClaveTemporalPostulacion,
     DocumentoPostulacion,
     EntrevistaPostulacion,
@@ -53,7 +54,10 @@ from .serializers import (
     TipoInstalacionSerializer,
     VacanteAdminSerializer,
     VacantePublicaSerializer,
+    DestinatariosPostulacionZonaSerializer,
 )
+from instalacion.models import Zona
+from .services.notificaciones import enviar_comprobante_postulacion
 
 
 EDITABLE_STATES = {"borrador", "datos_incompletos", "pendiente_documentos", "evaluacion_pendiente"}
@@ -486,6 +490,7 @@ class PublicPostulacionViewSet(viewsets.ViewSet):
         postulacion.evaluacion.save(update_fields=("finalizada_en",))
         qr, _ = TokenQrPostulacion.objects.get_or_create(postulacion=postulacion)
         audit(postulacion, "postulacion_finalizada", request)
+        enviar_comprobante_postulacion(postulacion)
         base = getattr(settings, "POSTULACIONES_ADMIN_URL", "https://admin.inout.cl").rstrip("/")
         return Response({"codigo": postulacion.codigo, "qr_url": f"{base}/postulaciones/verificar/{qr.token}"})
 
@@ -679,6 +684,37 @@ class VacanteAdminViewSet(viewsets.ModelViewSet):
     permission_classes = [IsPostulacionesAdmin]
     queryset = VacanteGuardia.objects.select_related("instalacion", "tipo_instalacion")
     serializer_class = VacanteAdminSerializer
+
+
+class DestinatariosPostulacionZonaViewSet(viewsets.ViewSet):
+    permission_classes = [IsPostulacionesAdmin]
+
+    def list(self, request):
+        configuraciones = {
+            item.zona_id: item
+            for item in DestinatariosPostulacionZona.objects.select_related("zona")
+        }
+        data = []
+        for zona in Zona.objects.all():
+            item = configuraciones.get(zona.id)
+            data.append({
+                "id": item.id if item else None,
+                "zona": zona.codigo,
+                "zona_nombre": zona.nombre,
+                "correos": item.correos if item else [],
+                "actualizado_en": item.actualizado_en if item else None,
+            })
+        return Response(data)
+
+    def create(self, request):
+        zona = Zona.objects.filter(codigo=request.data.get("zona")).first()
+        if not zona:
+            raise ValidationError({"zona": "La zona seleccionada no existe."})
+        item, _ = DestinatariosPostulacionZona.objects.get_or_create(zona=zona)
+        serializer = DestinatariosPostulacionZonaSerializer(item, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 class PreguntaAdminViewSet(viewsets.ModelViewSet):

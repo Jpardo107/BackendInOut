@@ -19,6 +19,20 @@ class TipoInstalacionLaboral(models.Model):
         return self.nombre
 
 
+class DestinatariosPostulacionZona(models.Model):
+    zona = models.OneToOneField(
+        "instalacion.Zona", on_delete=models.CASCADE, related_name="destinatarios_postulaciones"
+    )
+    correos = models.JSONField(default=list, blank=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("zona__nombre",)
+
+    def __str__(self):
+        return f"{self.zona}: {', '.join(self.correos)}"
+
+
 class PostulacionGuardia(models.Model):
     ESTADOS = [
         ("borrador", "Borrador"), ("datos_incompletos", "Datos incompletos"),
