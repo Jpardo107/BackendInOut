@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.validators import MinValueValidator
 from user.models import Usuario
 from instalacion.models import Instalacion
 
@@ -8,6 +9,9 @@ class RendicionGasto(models.Model):
     supervisor_nombre = models.CharField(max_length=301)
     instalacion = models.CharField(max_length=220)
     persona = models.CharField(max_length=220)
+    # Null is reserved for legacy receipts; the API requires an amount for new ones.
+    monto = models.DecimalField(max_digits=12, decimal_places=0, null=True, blank=True, validators=[MinValueValidator(1)])
+    motivo = models.CharField(max_length=1000, blank=True, default="")
     storage_key = models.CharField(max_length=500)
     creada_en = models.DateTimeField(auto_now_add=True, db_index=True)
 

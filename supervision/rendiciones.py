@@ -5,6 +5,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
+from django.db.models import Count, Sum
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import APIException, ValidationError
@@ -23,10 +24,12 @@ CHILE = ZoneInfo("America/Santiago")
 
 class RendicionSerializer(serializers.ModelSerializer):
     imagen = serializers.ImageField(write_only=True)
+    monto = serializers.DecimalField(max_digits=12, decimal_places=0, min_value=1, required=True)
+    motivo = serializers.CharField(max_length=1000, required=True, allow_blank=False)
 
     class Meta:
         model = RendicionGasto
-        fields = ["id", "supervisor", "supervisor_nombre", "instalacion", "persona", "creada_en", "imagen"]
+        fields = ["id", "supervisor", "supervisor_nombre", "instalacion", "persona", "monto", "motivo", "creada_en", "imagen"]
         read_only_fields = ["id", "supervisor", "supervisor_nombre", "creada_en"]
 
     def validate_imagen(self, image):
@@ -69,7 +72,7 @@ class RendicionGastoViewSet(mixins.CreateModelMixin, mixins.ListModelMixin,
 
     def get_queryset(self):
         queryset = self.scoped_queryset()
-        if self.action != "list":
+        if self.action not in {"list", "informe"}:
             return queryset
         filters = RendicionFilters(data=self.request.query_params)
         filters.is_valid(raise_exception=True)
@@ -86,6 +89,29 @@ class RendicionGastoViewSet(mixins.CreateModelMixin, mixins.ListModelMixin,
             end = datetime.combine(data["fecha_hasta"] + timedelta(days=1), time.min, tzinfo=CHILE)
             queryset = queryset.filter(creada_en__lt=end)
         return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        totals = queryset.aggregate(total=Sum("monto"), con_monto=Count("monto"), cantidad=Count("id"))
+        page = self.paginate_queryset(queryset)
+        response = self.get_paginated_response(self.get_serializer(page, many=True).data)
+        response.data["resumen"] = {
+            "total": str(totals["total"] or 0), "moneda": "CLP",
+            "con_monto": totals["con_monto"], "sin_monto": totals["cantidad"] - totals["con_monto"],
+        }
+        return response
+
+    @action(detail=False, methods=["get"])
+    def informe(self, request):
+        from .rendiciones_reports import expense_report
+
+        queryset = self.get_queryset()
+        if not request.query_params.get("fecha_desde") or not request.query_params.get("fecha_hasta"):
+            raise ValidationError("Selecciona la fecha desde y hasta para generar el informe.")
+        formato = request.query_params.get("formato", "pdf")
+        if formato not in {"pdf", "xlsx"}:
+            raise ValidationError("El formato debe ser pdf o xlsx.")
+        return expense_report(queryset.order_by("creada_en", "id"), request.query_params, formato)
 
     def perform_create(self, serializer):
         image = serializer.validated_data.pop("imagen")

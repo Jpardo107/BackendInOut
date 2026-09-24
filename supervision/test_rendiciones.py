@@ -1,5 +1,9 @@
 from datetime import datetime, timezone
 from io import BytesIO
+from decimal import Decimal
+
+from openpyxl import load_workbook
+from pypdf import PdfReader
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -40,12 +44,14 @@ class RendicionGastoTests(TestCase):
         return RendicionGasto.objects.create(
             supervisor=user, supervisor_nombre=str(user), storage_key="rendiciones-gastos/test.png",
             instalacion=values.get("instalacion", "Planta Norte"), persona=values.get("persona", "Pedro Soto"),
+            monto=values.get("monto", 15000), motivo=values.get("motivo", "Traslado de guardia"),
         )
 
     @patch("supervision.rendiciones.upload_document")
     def test_create_records_authenticated_supervisor_and_server_time(self, upload):
         before = datetime.now(timezone.utc)
         response = self.client.post(self.endpoint, {
+            "monto": "15000", "motivo": "  Traslado de guardia  ",
             "imagen": self.image(), "instalacion": "  Planta Norte  ", "persona": " Pedro Soto ",
             "supervisor": self.other.id, "supervisor_nombre": "Falso", "creada_en": "2000-01-01T00:00:00Z",
         }, format="multipart")
@@ -56,6 +62,8 @@ class RendicionGastoTests(TestCase):
         self.assertGreaterEqual(expense.creada_en, before)
         self.assertEqual(expense.instalacion, "Planta Norte")
         self.assertEqual(expense.persona, "Pedro Soto")
+        self.assertEqual(expense.monto, Decimal("15000"))
+        self.assertEqual(expense.motivo, "Traslado de guardia")
         self.assertTrue(expense.storage_key.startswith("rendiciones-gastos/"))
         upload.assert_called_once()
 
@@ -68,6 +76,7 @@ class RendicionGastoTests(TestCase):
             {"imagen": SimpleUploadedFile("fake.png", b"invalid", content_type="image/png"), "instalacion": "Planta", "persona": "Pedro"},
         ]
         for payload in payloads:
+            payload.update(monto="15000", motivo="Traslado")
             with self.subTest(fields=list(payload)):
                 self.assertEqual(self.client.post(self.endpoint, payload, format="multipart").status_code, 400)
         self.assertFalse(RendicionGasto.objects.exists())
@@ -77,14 +86,14 @@ class RendicionGastoTests(TestCase):
     def test_oversized_image_rejected(self, upload):
         image = self.image()
         oversized = SimpleUploadedFile("large.png", image.read() + b"\0" * (10 * 1024 * 1024), content_type="image/png")
-        response = self.client.post(self.endpoint, {"imagen": oversized, "instalacion": "Planta", "persona": "Pedro"}, format="multipart")
+        response = self.client.post(self.endpoint, {"imagen": oversized, "instalacion": "Planta", "persona": "Pedro", "monto": "15000", "motivo": "Traslado"}, format="multipart")
         self.assertEqual(response.status_code, 400)
         upload.assert_not_called()
 
     @patch("supervision.rendiciones.upload_document", side_effect=RuntimeError("Storage unavailable"))
     def test_storage_failure_does_not_create_expense(self, upload):
         with self.assertLogs("supervision.rendiciones", level="ERROR"):
-            response = self.client.post(self.endpoint, {"imagen": self.image(), "instalacion": "Planta", "persona": "Pedro"}, format="multipart")
+            response = self.client.post(self.endpoint, {"imagen": self.image(), "instalacion": "Planta", "persona": "Pedro", "monto": "15000", "motivo": "Traslado"}, format="multipart")
         self.assertEqual(response.status_code, 500)
         self.assertFalse(RendicionGasto.objects.exists())
 
@@ -93,7 +102,7 @@ class RendicionGastoTests(TestCase):
     @patch("supervision.rendiciones.RendicionSerializer.save", side_effect=RuntimeError("DB failure"))
     def test_database_failure_cleans_uploaded_image(self, save, delete, upload):
         with self.assertRaises(RuntimeError):
-            self.client.post(self.endpoint, {"imagen": self.image(), "instalacion": "Planta", "persona": "Pedro"}, format="multipart")
+            self.client.post(self.endpoint, {"imagen": self.image(), "instalacion": "Planta", "persona": "Pedro", "monto": "15000", "motivo": "Traslado"}, format="multipart")
         delete.assert_called_once_with(upload.call_args.args[1])
 
     @patch("supervision.rendiciones.generate_signed_url", return_value="https://storage.test/comprobante")
@@ -155,3 +164,87 @@ class RendicionGastoTests(TestCase):
         self.assertEqual(response.data["count"], 21)
         self.assertEqual(len(response.data["results"]), 20)
         self.assertEqual(len(self.client.get(self.endpoint, {"page": 2}).data["results"]), 1)
+
+    @patch("supervision.rendiciones.upload_document")
+    def test_amount_and_reason_are_required_and_validated_before_upload(self, upload):
+        cases = [{"monto": None}, {"motivo": None}, {"monto": "0"}, {"monto": "-1"},
+                 {"monto": "1.5"}, {"monto": "abc"}, {"monto": "1000000000000"},
+                 {"motivo": "  "}, {"motivo": "x" * 1001}]
+        for changes in cases:
+            payload = {"imagen": self.image(), "instalacion": "Planta", "persona": "Pedro", "monto": "15000", "motivo": "Traslado"}
+            payload.update(changes)
+            payload = {key: value for key, value in payload.items() if value is not None}
+            with self.subTest(changes=changes):
+                response = self.client.post(self.endpoint, payload, format="multipart")
+                self.assertEqual(response.status_code, 400, response.data)
+        upload.assert_not_called()
+
+    def report(self, formato="xlsx", **filters):
+        params = {"fecha_desde": "2000-01-01", "fecha_hasta": "2100-12-31", "formato": formato, **filters}
+        return self.client.get(f"{self.endpoint}informe/", params)
+
+    def test_totals_include_all_pages_and_mark_legacy_records(self):
+        for _ in range(21):
+            self.expense(monto=1234)
+        self.expense(monto=None, motivo="")
+        self.expense(self.other, monto=900000)
+        response = self.client.get(self.endpoint)
+        self.assertEqual(response.data["resumen"], {"total": "25914", "moneda": "CLP", "con_monto": 21, "sin_monto": 1})
+        self.assertEqual(len(response.data["results"]), 20)
+        book = load_workbook(BytesIO(self.report().content))
+        self.assertEqual(book.sheetnames, ["Resumen", "Detalle", "Por supervisor", "Por instalación", "Por día"])
+        self.assertEqual(book["Detalle"].max_row, 24)  # Header, 22 expenses, total.
+        self.assertEqual(book["Detalle"].cell(24, 7).value, 25914)
+        self.assertEqual(book["Por instalación"]["C2"].value, 25914)
+        self.assertEqual(book["Por instalación"]["D2"].value, 1)
+        self.assertEqual(book["Detalle"].freeze_panes, "A2")
+
+    def test_excel_preserves_text_numeric_amounts_and_local_dates(self):
+        row = self.expense(monto=999999999999, motivo="=HYPERLINK(\"https://example.test\")")
+        RendicionGasto.objects.filter(pk=row.pk).update(creada_en=datetime(2026, 9, 25, 2, 59, tzinfo=timezone.utc))
+        response = self.report(fecha_desde="2026-09-24", fecha_hasta="2026-09-24")
+        self.assertEqual(response.status_code, 200)
+        book = load_workbook(BytesIO(response.content))
+        self.assertEqual(book["Detalle"]["B2"].value, datetime(2026, 9, 24, 23, 59))
+        self.assertEqual(book["Detalle"]["F2"].data_type, "s")
+        self.assertEqual(book["Detalle"]["F2"].value, row.motivo)
+        self.assertEqual(book["Detalle"]["G2"].data_type, "n")
+        self.assertEqual(book["Detalle"]["G2"].value, 999999999999)
+
+    def test_reports_respect_filters_scope_and_chilean_day_boundary(self):
+        first = self.expense()
+        second = self.expense(self.other, instalacion="Planta Sur")
+        RendicionGasto.objects.filter(pk=first.pk).update(creada_en=datetime(2026, 9, 25, 2, 59, tzinfo=timezone.utc))
+        RendicionGasto.objects.filter(pk=second.pk).update(creada_en=datetime(2026, 9, 25, 3, 0, tzinfo=timezone.utc))
+        self.assertEqual(load_workbook(BytesIO(self.report(supervisor=self.other.id).content))["Detalle"].max_row, 2)
+        self.client.force_authenticate(self.admin)
+        for filters in [{"fecha_desde": "2026-09-24", "fecha_hasta": "2026-09-24"},
+                        {"supervisor": self.supervisor.id, "instalacion": "Norte", "persona": "Pedro"}]:
+            book = load_workbook(BytesIO(self.report(**filters).content))
+            self.assertEqual(book["Detalle"].max_row, 3)
+            self.assertEqual(book["Detalle"]["A2"].value, first.id)
+
+    def test_pdf_handles_multiple_pages_long_reasons_and_totals(self):
+        for _ in range(25):
+            self.expense(monto=2000, motivo="Traslado <guardia> & alimentación. " * 25)
+        response = self.report("pdf")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        document = PdfReader(BytesIO(response.content))
+        self.assertGreater(len(document.pages), 1)
+        text = " ".join(page.extract_text() for page in document.pages)
+        self.assertIn("50.000", text)
+        self.assertIn("Por supervisor", text)
+        self.assertIn("Detalle de rendiciones", text)
+        self.assertIn("Traslado <guardia> &", text)
+
+    def test_empty_reports_and_invalid_report_requests(self):
+        for formato in ["pdf", "xlsx"]:
+            self.assertEqual(self.report(formato).status_code, 200)
+        for params in [{}, {"fecha_desde": "2026-01-01"},
+                       {"fecha_desde": "2026-02-01", "fecha_hasta": "2026-01-01"},
+                       {"fecha_desde": "invalid", "fecha_hasta": "2026-01-01"}]:
+            self.assertEqual(self.client.get(f"{self.endpoint}informe/", params).status_code, 400)
+        self.assertEqual(self.report("csv").status_code, 400)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.report().status_code, 401)
