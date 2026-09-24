@@ -3,6 +3,18 @@ from user.models import Usuario
 from instalacion.models import Instalacion
 
 
+class RendicionGasto(models.Model):
+    supervisor = models.ForeignKey(Usuario, on_delete=models.PROTECT, related_name="rendiciones_gastos")
+    supervisor_nombre = models.CharField(max_length=301)
+    instalacion = models.CharField(max_length=220)
+    persona = models.CharField(max_length=220)
+    storage_key = models.CharField(max_length=500)
+    creada_en = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-creada_en", "-id"]
+
+
 class Supervision(models.Model):
     ESTADO_SOLICITUD_CHOICES = [
         ('pendiente', 'Pendiente'),  # Valor por defecto al crear

@@ -837,9 +837,70 @@ class MovimientoInventarioTests(TestCase):
         self.assertEqual(response.data["usuario_registro"], admin.id)
         self.assertEqual(response.data["usuario_registro_nombre"], "Admin Manual")
         self.assertIn("2025-04-15", response.data["creado_en"])
-        self.assertIn("Ingreso manual informativo sin firma", response.data["observacion"])
+        self.assertIn("Registro historico informativo sin impacto en stock", response.data["observacion"])
+        self.assertTrue(response.data["es_registro_historico"])
         prenda.refresh_from_db()
         self.assertEqual(prenda.stock_actual, 5)
+
+    def test_alerta_entrega_reciente_informa_fecha_cantidad_y_quien_entrego(self):
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="POLAR",
+            talla_prenda="M",
+            stock_actual=5,
+        )
+        movimiento = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 2,
+                "usuario_final": self.usuario_final.id,
+                "destinatario_personal": self.destinatario.id,
+            },
+            context={"request": type("Request", (), {"user": self.usuario_rrhh})()},
+        )
+        self.assertTrue(movimiento.is_valid(), movimiento.errors)
+        entrega = movimiento.save()
+        client = APIClient()
+        client.force_authenticate(user=self.usuario_rrhh)
+
+        response = client.post(
+            "/api/inventario/movimientos/entregas-recientes/",
+            {"destinatario_personal": self.destinatario.id, "prendas": [prenda.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.data], [entrega.id])
+        self.assertEqual(response.data[0]["cantidad"], 2)
+        self.assertEqual(response.data[0]["usuario_registro_nombre"], "RRHH Movimientos")
+        self.assertTrue(response.data[0]["creado_en"])
+
+    def test_no_permite_eliminar_movimiento_y_conserva_stock(self):
+        prenda = PrendaInventario.objects.create(
+            nombre_prenda="CAMISA",
+            talla_prenda="L",
+            stock_actual=3,
+        )
+        movimiento = MovimientoInventarioSerializer(
+            data={
+                "prenda": prenda.id,
+                "tipo": MovimientoInventario.TIPO_ENTREGA,
+                "cantidad": 1,
+                "usuario_final": self.usuario_final.id,
+                "destinatario_personal": self.destinatario.id,
+            }
+        )
+        self.assertTrue(movimiento.is_valid(), movimiento.errors)
+        entrega = movimiento.save()
+        client = APIClient()
+        client.force_authenticate(user=self.usuario_rrhh)
+
+        response = client.delete(f"/api/inventario/movimientos/{entrega.id}/")
+
+        self.assertEqual(response.status_code, 405)
+        self.assertTrue(MovimientoInventario.objects.filter(pk=entrega.id).exists())
+        prenda.refresh_from_db()
+        self.assertEqual(prenda.stock_actual, 2)
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", DEFAULT_FROM_EMAIL="alertas@inout.cl")
     def test_envia_correo_una_vez_al_cruzar_stock_minimo(self):

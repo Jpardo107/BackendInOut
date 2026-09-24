@@ -97,6 +97,7 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
     destinatario_ubicacion = serializers.SerializerMethodField()
     comprobante_entrega_id = serializers.SerializerMethodField()
     comprobante_descarga_url = serializers.SerializerMethodField()
+    es_registro_historico = serializers.SerializerMethodField()
 
     class Meta:
         model = MovimientoInventario
@@ -118,6 +119,7 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
             "destinatario_ubicacion",
             "comprobante_entrega_id",
             "comprobante_descarga_url",
+            "es_registro_historico",
             "observacion",
             "estado_envio",
             "fecha_estado_envio",
@@ -135,6 +137,7 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
             "destinatario_ubicacion",
             "comprobante_entrega_id",
             "comprobante_descarga_url",
+            "es_registro_historico",
             "fecha_estado_envio",
             "creado_en",
         ]
@@ -175,6 +178,9 @@ class MovimientoInventarioSerializer(serializers.ModelSerializer):
             )
         except Exception:
             return ""
+
+    def get_es_registro_historico(self, obj):
+        return (obj.observacion or "").startswith("Registro historico informativo sin impacto en stock")
 
     def validate(self, attrs):
         tipo = attrs.get("tipo")

@@ -251,6 +251,9 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
     ]
     ordering_fields = ["creado_en", "tipo", "cantidad"]
     ordering = ["-creado_en", "-id"]
+    # Los movimientos son el libro de auditoria del inventario. No se eliminan:
+    # una anulacion se gestiona mediante cambiar-estado, que repone el stock.
+    http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
         queryset = (
@@ -365,6 +368,32 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    @action(detail=False, methods=["post"], url_path="entregas-recientes")
+    def entregas_recientes(self, request):
+        destinatario_id = request.data.get("destinatario_personal")
+        prendas_ids = request.data.get("prendas", [])
+        if not destinatario_id:
+            raise ValidationError({"destinatario_personal": "Selecciona una persona."})
+        if not isinstance(prendas_ids, list) or not prendas_ids:
+            raise ValidationError({"prendas": "Selecciona al menos un articulo."})
+
+        limite = timezone.now() - timedelta(days=30)
+        recientes = (
+            self.get_queryset()
+            .filter(
+                tipo=MovimientoInventario.TIPO_ENTREGA,
+                destinatario_personal_id=destinatario_id,
+                prenda_id__in=set(prendas_ids),
+                creado_en__gte=limite,
+            )
+            .exclude(estado_envio__in=[
+                MovimientoInventario.ESTADO_DEVUELTO,
+                MovimientoInventario.ESTADO_CANCELADO,
+            ])
+            .order_by("-creado_en", "-id")
+        )
+        return Response(self.get_serializer(recientes, many=True).data)
+
     @action(detail=False, methods=["post"], url_path="registro-manual")
     def registro_manual(self, request):
         if not user_has_inventory_admin_role(request.user):
@@ -413,7 +442,7 @@ class MovimientoInventarioViewSet(viewsets.ModelViewSet):
             stock_antes = prenda.stock_actual
             stock_despues = stock_antes
 
-            detalle_observacion = "Ingreso manual informativo sin firma"
+            detalle_observacion = "Registro historico informativo sin impacto en stock"
             if observacion:
                 detalle_observacion = f"{detalle_observacion}: {observacion}"
 
