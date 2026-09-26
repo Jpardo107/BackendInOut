@@ -45,7 +45,73 @@ class RendicionGastoTests(TestCase):
             supervisor=user, supervisor_nombre=str(user), storage_key="rendiciones-gastos/test.png",
             instalacion=values.get("instalacion", "Planta Norte"), persona=values.get("persona", "Pedro Soto"),
             monto=values.get("monto", 15000), motivo=values.get("motivo", "Traslado de guardia"),
+            gasto_depositado=values.get("gasto_depositado", False), depositante=values.get("depositante", ""),
+            monto_depositado=values.get("monto_depositado"),
         )
+
+    @patch("supervision.rendiciones.upload_document")
+    def test_deposits_persist_and_difference_is_computed_by_server(self, upload):
+        for deposited, difference in [(10000, "5000"), (15000, "0"), (20000, "-5000")]:
+            with self.subTest(deposited=deposited):
+                response = self.client.post(self.endpoint, {
+                    "imagen": self.image(), "instalacion": "Planta", "persona": "Pedro",
+                    "monto": "15000", "motivo": "Traslado", "gasto_depositado": "true",
+                    "depositante": "  Carlos Jefe  ", "monto_depositado": str(deposited), "diferencia": "999",
+                }, format="multipart")
+                self.assertEqual(response.status_code, 201, response.data)
+                saved = RendicionGasto.objects.get(pk=response.data["id"])
+                self.assertTrue(saved.gasto_depositado)
+                self.assertEqual(saved.depositante, "Carlos Jefe")
+                self.assertEqual(saved.monto_depositado, Decimal(deposited))
+                detail = self.client.get(f"{self.endpoint}{saved.pk}/").data
+                self.assertEqual(detail["diferencia"], difference)
+
+    @patch("supervision.rendiciones.upload_document")
+    def test_deposit_requires_name_and_positive_integer_amount_before_upload(self, upload):
+        cases = [{"depositante": "  "}, {"depositante": None}, {"depositante": "x" * 221},
+                 {"monto_depositado": None}, {"monto_depositado": "0"}, {"monto_depositado": "-1"},
+                 {"monto_depositado": "1.5"}, {"monto_depositado": "abc"}, {"monto_depositado": "1000000000000"}]
+        for changes in cases:
+            payload = {"imagen": self.image(), "instalacion": "Planta", "persona": "Pedro", "monto": "15000",
+                       "motivo": "Traslado", "gasto_depositado": "true", "depositante": "Carlos", "monto_depositado": "10000"}
+            payload.update(changes)
+            with self.subTest(changes=changes):
+                response = self.client.post(self.endpoint, {k: v for k, v in payload.items() if v is not None}, format="multipart")
+                self.assertEqual(response.status_code, 400, response.data)
+        upload.assert_not_called()
+
+    @patch("supervision.rendiciones.upload_document")
+    def test_unchecked_deposit_clears_details_and_old_clients_remain_supported(self, upload):
+        for deposit in [{}, {"gasto_depositado": "false", "depositante": "Carlos", "monto_depositado": "10000"}]:
+            response = self.client.post(self.endpoint, {
+                "imagen": self.image(), "instalacion": "Planta", "persona": "Pedro",
+                "monto": "15000", "motivo": "Traslado", **deposit,
+            }, format="multipart")
+            self.assertEqual(response.status_code, 201, response.data)
+            self.assertFalse(response.data["gasto_depositado"])
+            self.assertEqual(response.data["depositante"], "")
+            self.assertIsNone(response.data["monto_depositado"])
+            self.assertIsNone(response.data["diferencia"])
+
+    def test_reports_include_deposits_signed_differences_and_separate_balances(self):
+        for amount in [10000, 15000, 20000]:
+            self.expense(gasto_depositado=True, depositante="=Carlos <Jefe>", monto_depositado=amount)
+        self.expense(monto=None)
+        book = load_workbook(BytesIO(self.report().content))
+        detail = book["Detalle"]
+        self.assertEqual([detail.cell(i, 11).value for i in range(2, 6)], [5000, 0, -5000, None])
+        self.assertEqual(detail["I2"].data_type, "s")
+        self.assertEqual(detail["I2"].value, "=Carlos <Jefe>")
+        self.assertEqual(detail["J2"].data_type, "n")
+        self.assertEqual(detail["J6"].value, 45000)
+        summary = dict(book["Resumen"].iter_rows(values_only=True))
+        self.assertEqual(summary["Total depositado CLP"], 45000)
+        self.assertEqual(summary["Por cubrir en gastos con depósito CLP"], 5000)
+        self.assertEqual(summary["Sobrante en gastos con depósito CLP"], 5000)
+        pdf = PdfReader(BytesIO(self.report("pdf").content))
+        text = " ".join(page.extract_text() for page in pdf.pages)
+        for expected in ["Depósitos y diferencias", "=Carlos <Jefe>", "45.000", "-5.000", "No calculada"]:
+            self.assertIn(expected, text)
 
     @patch("supervision.rendiciones.upload_document")
     def test_create_records_authenticated_supervisor_and_server_time(self, upload):

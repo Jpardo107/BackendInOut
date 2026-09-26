@@ -26,11 +26,26 @@ class RendicionSerializer(serializers.ModelSerializer):
     imagen = serializers.ImageField(write_only=True)
     monto = serializers.DecimalField(max_digits=12, decimal_places=0, min_value=1, required=True)
     motivo = serializers.CharField(max_length=1000, required=True, allow_blank=False)
+    diferencia = serializers.DecimalField(max_digits=12, decimal_places=0, read_only=True, allow_null=True)
 
     class Meta:
         model = RendicionGasto
-        fields = ["id", "supervisor", "supervisor_nombre", "instalacion", "persona", "monto", "motivo", "creada_en", "imagen"]
+        fields = ["id", "supervisor", "supervisor_nombre", "instalacion", "persona", "monto", "motivo", "gasto_depositado", "depositante", "monto_depositado", "diferencia", "creada_en", "imagen"]
         read_only_fields = ["id", "supervisor", "supervisor_nombre", "creada_en"]
+
+    def validate(self, data):
+        if data.get("gasto_depositado", False):
+            errors = {}
+            if not data.get("depositante"):
+                errors["depositante"] = "Ingresa el nombre de quien depositó."
+            if data.get("monto_depositado") is None:
+                errors["monto_depositado"] = "Ingresa el monto depositado."
+            if errors:
+                raise ValidationError(errors)
+        else:
+            data["depositante"] = ""
+            data["monto_depositado"] = None
+        return data
 
     def validate_imagen(self, image):
         if image.size > 10 * 1024 * 1024:

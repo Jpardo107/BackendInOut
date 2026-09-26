@@ -37,6 +37,7 @@ def expense_report(queryset, filters, formato):
         if filters.get(key):
             metadata.append(f"{label}: {filters[key]}")
     metadata.append("Los registros sin monto no se incluyen en los totales. El total corresponde al monto registrado, sin desglose de impuestos.")
+    metadata.append("Depósitos: diferencia = gasto menos depósito. Positiva: por cubrir; negativa: sobrante. Sin depósito registrado: diferencia no calculada.")
 
     groups = {"Por supervisor": defaultdict(lambda: [0, 0, 0]),
               "Por instalación": defaultdict(lambda: [0, 0, 0]),
@@ -46,7 +47,11 @@ def expense_report(queryset, filters, formato):
         local = timezone.localtime(row.creada_en, CHILE)
         amount = int(row.monto) if row.monto is not None else None
         details.append([row.id, local.replace(tzinfo=None), row.supervisor_nombre, row.instalacion,
-                        row.persona, row.motivo or "Sin motivo registrado", amount])
+                        row.persona, row.motivo or "Sin motivo registrado", amount,
+                        "Sí" if row.gasto_depositado else "Sin depósito registrado",
+                        row.depositante if row.gasto_depositado else "",
+                        int(row.monto_depositado) if row.gasto_depositado and row.monto_depositado is not None else None,
+                        int(row.diferencia) if row.diferencia is not None else None])
         keys = [f"{row.supervisor_nombre} (#{row.supervisor_id})", row.instalacion, local.strftime("%Y-%m-%d")]
         for group, key in zip(groups.values(), keys):
             group[key][0] += 1
@@ -63,6 +68,14 @@ def expense_report(queryset, filters, formato):
     return response
 
 
+def deposit_totals(details):
+    return [
+        ("Total depositado CLP", sum(row[9] or 0 for row in details)),
+        ("Por cubrir en gastos con depósito CLP", sum(max(row[10] or 0, 0) for row in details)),
+        ("Sobrante en gastos con depósito CLP", sum(max(-(row[10] or 0), 0) for row in details)),
+    ]
+
+
 def excel_report(metadata, details, summaries, total, missing):
     workbook = Workbook()
     summary = workbook.active
@@ -76,6 +89,9 @@ def excel_report(metadata, details, summaries, total, missing):
     summary.append(["Sin monto", missing])
     summary.append(["TOTAL CLP", total])
     summary.cell(summary.max_row, 2).number_format = MONEY_FORMAT
+    for label, amount in deposit_totals(details):
+        summary.append([label, amount])
+        summary.cell(summary.max_row, 2).number_format = MONEY_FORMAT
     summary.column_dimensions["A"].width = 95
     summary.column_dimensions["B"].width = 22
     summary.sheet_properties.pageSetUpPr.fitToPage = True
@@ -96,8 +112,13 @@ def excel_report(metadata, details, summaries, total, missing):
             sheet.column_dimensions[get_column_letter(index)].width = width
         return sheet
 
-    detail = add_sheet("Detalle", ["ID", "Fecha y hora (Chile)", "Supervisor", "Instalación", "Persona", "Motivo", "Monto CLP"],
-                       details, [12, 23, 30, 32, 30, 65, 22], 7)
+    detail = add_sheet("Detalle", ["ID", "Fecha y hora (Chile)", "Supervisor", "Instalación", "Persona", "Motivo", "Monto CLP",
+                                   "Depósito registrado", "Depositó", "Monto depositado CLP", "Diferencia CLP"],
+                       details, [12, 23, 30, 32, 30, 65, 22, 28, 30, 24, 24], 7)
+    detail.cell(detail.max_row, 10, deposit_totals(details)[0][1])
+    for row in detail.iter_rows(min_row=2):
+        row[9].number_format = MONEY_FORMAT
+        row[10].number_format = MONEY_FORMAT
     for row in detail.iter_rows(min_row=2, max_row=len(details) + 1):
         row[1].number_format = "dd/mm/yyyy hh:mm"
     for title, rows in summaries.items():
@@ -132,6 +153,7 @@ def pdf_report(metadata, details, summaries, total):
 
     story.extend(paragraph(line) for line in metadata)
     story.extend([Spacer(1, 12), Paragraph(f"Total registrado: {money(total)} CLP", styles["Heading2"])])
+    story.extend(paragraph(f"{label}: {money(amount)}") for label, amount in deposit_totals(details))
 
     def table(headers, rows, widths):
         data = [[paragraph(value) for value in headers]]
@@ -153,10 +175,15 @@ def pdf_report(metadata, details, summaries, total):
     story.append(Paragraph("Detalle de rendiciones", styles["Heading2"]))
     if details:
         data = [[id_, date.strftime("%d/%m/%Y %H:%M"), sup, site, person, reason, money(amount)]
-                for id_, date, sup, site, person, reason, amount in details]
+                for id_, date, sup, site, person, reason, amount, *_ in details]
         data.append(["TOTAL", "", "", "", "", "", money(total)])
         story.append(table(["ID", "Guardado (Chile)", "Supervisor", "Instalación", "Persona", "Motivo", "Monto CLP"],
                            data, [40, 80, 105, 105, 100, 240, 100]))
+        story.append(Paragraph("Depósitos y diferencias", styles["Heading2"]))
+        deposits = [[row[0], row[7], row[8] or "—", money(row[9]) if row[9] is not None else "—",
+                     money(row[10]) if row[10] is not None else "No calculada"] for row in details]
+        story.append(table(["ID", "Depósito registrado", "Depositó", "Depositado CLP", "Diferencia CLP"],
+                           deposits, [40, 170, 280, 140, 140]))
     else:
         story.append(paragraph("No hay rendiciones para el período y filtros seleccionados."))
 

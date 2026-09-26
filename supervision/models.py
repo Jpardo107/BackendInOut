@@ -12,11 +12,20 @@ class RendicionGasto(models.Model):
     # Null is reserved for legacy receipts; the API requires an amount for new ones.
     monto = models.DecimalField(max_digits=12, decimal_places=0, null=True, blank=True, validators=[MinValueValidator(1)])
     motivo = models.CharField(max_length=1000, blank=True, default="")
+    gasto_depositado = models.BooleanField(default=False)
+    depositante = models.CharField(max_length=220, blank=True, default="")
+    monto_depositado = models.DecimalField(max_digits=12, decimal_places=0, null=True, blank=True, validators=[MinValueValidator(1)])
     storage_key = models.CharField(max_length=500)
     creada_en = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
         ordering = ["-creada_en", "-id"]
+
+    @property
+    def diferencia(self):
+        if not self.gasto_depositado or self.monto is None or self.monto_depositado is None:
+            return None
+        return self.monto - self.monto_depositado
 
 
 class Supervision(models.Model):
