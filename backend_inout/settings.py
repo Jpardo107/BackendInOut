@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'user',
     'supervision',
+    'vehiculos',
     'instalacion',
     'documentacion',
     'cargo_fijo',
