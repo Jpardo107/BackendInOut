@@ -15,9 +15,9 @@ from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import AnalyticsEvent, Promotion, SiteImage, SiteText
+from .models import AnalyticsEvent, Promotion, SiteImage, SiteText, StoreCollection
 from .permissions import IsVivadentAdmin
-from .serializers import AnalyticsEventSerializer, PromotionSerializer, SiteImageSerializer, SiteTextSerializer, VivadentTokenSerializer
+from .serializers import AnalyticsEventSerializer, PromotionSerializer, SiteImageSerializer, SiteTextSerializer, VivadentTokenSerializer, StoreCollectionSerializer
 from .services.storage import save_uploaded_image
 from backend_inout.utils.r2_client import get_r2_client
 
@@ -78,11 +78,14 @@ class PublicContentView(APIView):
 
     def get(self, request):
         promotions = Promotion.objects.filter(status="active")
-        return Response({
+        response = Response({
             "promotions": PromotionSerializer(promotions, many=True).data,
+            "collections": StoreCollectionSerializer(StoreCollection.objects.filter(enabled=True), many=True).data,
             "images": SiteImageSerializer(SiteImage.objects.all(), many=True).data,
             "texts": SiteTextSerializer(SiteText.objects.all(), many=True).data,
         })
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 class PublicMediaView(APIView):
@@ -120,7 +123,11 @@ class TrackEventView(APIView):
     def post(self, request):
         serializer = AnalyticsEventSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        data = serializer.validated_data
+        if data.get("event_id"):
+            AnalyticsEvent.objects.get_or_create(event_id=data["event_id"], defaults=data)
+        else:
+            serializer.save()
         return Response(status=status.HTTP_201_CREATED)
 
 
@@ -162,3 +169,10 @@ class AnalyticsDashboardView(APIView):
 @permission_classes([IsVivadentAdmin])
 def current_user(request):
     return Response({"id": request.user.id, "username": request.user.username, "name": f"{request.user.nombres} {request.user.apellidos}".strip(), "email": request.user.email})
+
+
+class StoreCollectionViewSet(viewsets.ModelViewSet):
+    queryset = StoreCollection.objects.all()
+    serializer_class = StoreCollectionSerializer
+    permission_classes = [IsVivadentAdmin]
+    http_method_names = ["get", "put", "patch", "head", "options"]

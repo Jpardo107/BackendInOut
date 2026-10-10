@@ -50,8 +50,10 @@ class SiteText(models.Model):
 
 
 class AnalyticsEvent(models.Model):
-    EVENT_CHOICES = [("page_view", "Visita"), ("section_view", "Sección visitada"), ("click", "Clic")]
+    EVENT_CHOICES = [("page_view", "Visita"), ("section_view", "Sección visitada"), ("click", "Clic"), ("product_view", "Tratamiento visto"), ("add_to_cart", "Agregado al carrito"), ("remove_from_cart", "Retirado del carrito"), ("checkout_started", "Inicio de compra")]
     event_type = models.CharField(max_length=20, choices=EVENT_CHOICES, db_index=True)
+    event_id = models.UUIDField(null=True, blank=True, unique=True)
+    promotion_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     section = models.CharField(max_length=100, blank=True, db_index=True)
     target = models.CharField(max_length=100, blank=True, db_index=True)
     session_id = models.CharField(max_length=64, db_index=True)
@@ -62,3 +64,25 @@ class AnalyticsEvent(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["created_at", "event_type"]), models.Index(fields=["section", "created_at"])]
+
+
+class StoreCollection(models.Model):
+    key = models.SlugField(max_length=80, unique=True)
+    title = models.CharField(max_length=160)
+    eyebrow = models.CharField(max_length=160, blank=True)
+    description = models.TextField(max_length=600, blank=True)
+    enabled = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+    promotion_ids = models.JSONField(default=list, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+
+class StoreSession(models.Model):
+    session_id = models.CharField(max_length=64, unique=True)
+    visitor_id = models.CharField(max_length=64, db_index=True)
+    cart_ids = models.JSONField(default=list, blank=True)
+    last_seen = models.DateTimeField(db_index=True)
+    active = models.BooleanField(default=True)
