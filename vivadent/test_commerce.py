@@ -42,7 +42,7 @@ class CommerceTests(APITestCase):
         self.admin()
         self.assertEqual(self.client.get(f'/api/vivadent/collections/{c.id}/').data['promotion_ids'], [])
         c.enabled = False; c.save()
-        self.assertNotIn('facial', [x['key'] for x in self.client.get('/api/vivadent/public/content/').data['collections']])
+        self.assertFalse(next(x for x in self.client.get('/api/vivadent/public/content/').data['collections'] if x['key'] == 'facial')['enabled'])
 
     def test_events_deduplicated_and_client_cannot_claim_purchase(self):
         payload = {'event_type': 'add_to_cart', 'session_id': 's1', 'promotion_id': self.promo.id, 'event_id': str(uuid4())}
@@ -109,3 +109,53 @@ class CommerceTests(APITestCase):
             result = self.client.get('/api/vivadent/analytics/live/').data
         self.assertEqual(result['online'], 0)
         self.assertEqual(result['active_carts'], 0)
+
+
+class TreatmentSectionsTests(APITestCase):
+    setUp = CommerceTests.setUp
+    admin = CommerceTests.admin
+
+    def test_four_sections_exist_in_display_order(self):
+        self.assertEqual(list(StoreCollection.objects.exclude(key='packs').values_list('key', flat=True)), ['tienda', 'dental', 'facial', 'radiologia'])
+
+    def test_create_edit_and_remove_membership(self):
+        self.admin()
+        response = self.client.post('/api/vivadent/promotions/', {'title': 'Pack sonrisa', 'subtitle': 'Test', 'price': '$40.000', 'description': 'Test', 'status': 'active', 'section_keys': ['tienda', 'dental']}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        pk = response.data['id']
+        self.assertEqual(response.data['section_keys'], ['tienda', 'dental'])
+        self.assertIn(pk, StoreCollection.objects.get(key='dental').promotion_ids)
+        response = self.client.patch(f'/api/vivadent/promotions/{pk}/', {'section_keys': ['radiologia']}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['section_keys'], ['radiologia'])
+        self.assertNotIn(pk, StoreCollection.objects.get(key='dental').promotion_ids)
+        response = self.client.patch(f'/api/vivadent/promotions/{pk}/', {'price': '$45.000'}, format='json')
+        self.assertEqual(response.data['section_keys'], ['radiologia'])
+        self.assertEqual(self.client.patch(f'/api/vivadent/promotions/{pk}/', {'section_keys': ['unknown']}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(f'/api/vivadent/promotions/{pk}/', {'section_keys': ['dental', 'dental']}, format='json').status_code, 400)
+        self.assertEqual(self.client.delete(f'/api/vivadent/promotions/{pk}/').status_code, 204)
+        public = self.client.get('/api/vivadent/public/content/').data
+        self.assertTrue(all(pk not in row['promotion_ids'] for row in public['collections']))
+
+    def test_empty_memberships_preserve_catalog_product(self):
+        self.admin()
+        response = self.client.patch(f'/api/vivadent/promotions/{self.promo.id}/', {'section_keys': []}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['section_keys'], [])
+        self.assertIn(self.promo.id, [p['id'] for p in self.client.get('/api/vivadent/public/content/').data['promotions']])
+
+    def test_catalog_survives_missing_collections_table_during_deploy(self):
+        from django.db import OperationalError
+        with patch('vivadent.views.StoreCollection.objects.all', side_effect=OperationalError('no such table: vivadent_storecollection')):
+            response = self.client.get('/api/vivadent/public/content/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data['collections'])
+        self.assertIn(self.promo.id, [p['id'] for p in response.data['promotions']])
+        self.assertNotIn(self.draft.id, [p['id'] for p in response.data['promotions']])
+        self.assertTrue(all(p['section_keys'] == [] for p in response.data['promotions']))
+
+    def test_catalog_does_not_mask_other_database_errors(self):
+        from django.db import OperationalError
+        with patch('vivadent.views.StoreCollection.objects.all', side_effect=OperationalError('database is unavailable')):
+            with self.assertRaises(OperationalError):
+                self.client.get('/api/vivadent/public/content/')

@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -15,6 +16,51 @@ class VivadentTokenSerializer(TokenObtainPairSerializer):
 
 
 class PromotionSerializer(serializers.ModelSerializer):
+    section_keys = serializers.ListField(child=serializers.ChoiceField(choices=['tienda', 'dental', 'facial', 'radiologia']), required=False, allow_empty=True)
+
+    def validate_section_keys(self, keys):
+        if len(keys) != len(set(keys)):
+            raise serializers.ValidationError("No puedes repetir secciones.")
+        if StoreCollection.objects.filter(key__in=keys).count() != len(keys):
+            raise serializers.ValidationError("Actualiza las secciones del backend antes de guardar.")
+        return keys
+
+    def to_representation(self, instance):
+        # Membership is stored by collection; never infer it from the title here.
+        data = super().to_representation(instance)
+        collections = self.context.get('store_collections')
+        if collections is None:
+            collections = StoreCollection.objects.all()
+        data['section_keys'] = [c.key for c in collections if instance.id in c.promotion_ids and c.key in ['tienda', 'dental', 'facial', 'radiologia']]
+        return data
+
+    def sync_sections(self, instance, keys):
+        if keys is None:
+            return
+        for collection in StoreCollection.objects.select_for_update().filter(key__in=['tienda', 'dental', 'facial', 'radiologia']):
+            ids = list(collection.promotion_ids)
+            if collection.key in keys and instance.id not in ids:
+                ids.append(instance.id)
+            elif collection.key not in keys:
+                ids = [pk for pk in ids if pk != instance.id]
+            if ids != collection.promotion_ids:
+                collection.promotion_ids = ids
+                collection.save(update_fields=['promotion_ids', 'updated_at'])
+
+    @transaction.atomic
+    def create(self, validated_data):
+        keys = validated_data.pop('section_keys', None)
+        instance = super().create(validated_data)
+        self.sync_sections(instance, keys)
+        return instance
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        keys = validated_data.pop('section_keys', None)
+        instance = super().update(instance, validated_data)
+        self.sync_sections(instance, keys)
+        return instance
+
     class Meta:
         model = Promotion
         fields = "__all__"

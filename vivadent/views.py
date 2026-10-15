@@ -1,9 +1,11 @@
+import logging
 from datetime import timedelta
 from pathlib import Path
 
 from botocore.exceptions import ClientError
 from django.conf import settings
 from django.http import FileResponse, Http404, StreamingHttpResponse
+from django.db import OperationalError, ProgrammingError, transaction
 from django.db.models import Count
 from django.db.models.functions import TruncDate
 from django.utils import timezone
@@ -78,9 +80,21 @@ class PublicContentView(APIView):
 
     def get(self, request):
         promotions = Promotion.objects.filter(status="active")
+        # A rolling deployment may serve code before the collections migration.
+        # Keep the pre-existing catalog available until that migration is applied.
+        try:
+            with transaction.atomic():
+                collections = list(StoreCollection.objects.all())
+        except (ProgrammingError, OperationalError) as exc:
+            code = getattr(exc.__cause__, "sqlstate", None) or getattr(exc.__cause__, "pgcode", None)
+            missing_table = code == "42P01" or "no such table: vivadent_storecollection" in str(exc).lower()
+            if not missing_table:
+                raise
+            logging.getLogger(__name__).warning("Vivadent collections table is missing. Run python manage.py migrate vivadent. Serving existing promotions.")
+            collections = None
         response = Response({
-            "promotions": PromotionSerializer(promotions, many=True).data,
-            "collections": StoreCollectionSerializer(StoreCollection.objects.filter(enabled=True), many=True).data,
+            "promotions": PromotionSerializer(promotions, many=True, context={"store_collections": collections or []}).data,
+            "collections": StoreCollectionSerializer(collections, many=True).data if collections is not None else None,
             "images": SiteImageSerializer(SiteImage.objects.all(), many=True).data,
             "texts": SiteTextSerializer(SiteText.objects.all(), many=True).data,
         })
