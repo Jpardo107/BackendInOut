@@ -265,3 +265,6 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': False,
 }
+
+# Shared only with the RondApp backend; never ship this value in the Android app.
+RONDAPP_INTEGRATION_KEY = os.getenv("RONDAPP_INTEGRATION_KEY", "").strip()
