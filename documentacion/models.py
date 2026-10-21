@@ -5,6 +5,24 @@ import os
 import uuid
 from django.conf import settings
 from instalacion.models import Instalacion
+from django.db.models.functions import Lower
+
+
+def tipo_documento_codigo():
+    return f"tipo_{uuid.uuid4().hex}"
+
+
+class TipoDocumentoInstalacion(models.Model):
+    codigo = models.CharField(max_length=80, unique=True, default=tipo_documento_codigo, editable=False)
+    nombre = models.CharField(max_length=100)
+    orden = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ("orden", "nombre", "id")
+        constraints = [models.UniqueConstraint(Lower("nombre"), name="tipo_documento_inst_nombre_ci")]
+
+    def __str__(self):
+        return self.nombre
 
 class DocumentoItem(models.Model):
     nombre = models.CharField(max_length=100, unique=True)
@@ -57,6 +75,8 @@ class DocumentoInstalacion(models.Model):
     )
 
     titulo = models.CharField(max_length=150)
+    tipo_documento = models.ForeignKey(TipoDocumentoInstalacion, on_delete=models.PROTECT,
+        related_name="documentos", null=True, blank=True)
     categoria = models.CharField(max_length=80, blank=True, default="")
     clasificacion = models.CharField(
         max_length=20,
@@ -83,6 +103,7 @@ class DocumentoInstalacion(models.Model):
 
     class Meta:
         ordering = ("-created_at",)
+        constraints = [models.UniqueConstraint(fields=("instalacion", "tipo_documento"), name="documento_inst_tipo_unico")]
 
     def __str__(self):
         return f"[{self.instalacion_id}] {self.titulo}"

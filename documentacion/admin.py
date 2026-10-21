@@ -1,5 +1,11 @@
 from django.contrib import admin
-from .models import DocumentoItem, EstadoDocumentacion, DocumentoInstalacion
+from .models import DocumentoItem, EstadoDocumentacion, DocumentoInstalacion, TipoDocumentoInstalacion
+
+
+@admin.register(TipoDocumentoInstalacion)
+class TipoDocumentoInstalacionAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "orden", "codigo")
+    readonly_fields = ("codigo",)
 
 @admin.register(DocumentoItem)
 class DocumentoItemAdmin(admin.ModelAdmin):

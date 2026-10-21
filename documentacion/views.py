@@ -8,14 +8,18 @@ import tempfile
 import zipfile
 
 from django.http import HttpResponse
+from django.db import transaction, IntegrityError
+from django.db.models import Count
+from rest_framework.exceptions import ValidationError
+from instalacion.views import IsZonaAdmin
 from rest_framework import viewsets, generics, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
 from instalacion.models import Instalacion
-from .models import DocumentoItem, EstadoDocumentacion, DocumentoInstalacion, documento_upload_key
+from .models import DocumentoItem, EstadoDocumentacion, DocumentoInstalacion, TipoDocumentoInstalacion, documento_upload_key
 from .serializers import DocumentoItemSerializer, EstadoDocumentacionSerializer, DocumentoInstalacionSerializer, \
-    DocumentoInstalacionUploadSerializer
+    DocumentoInstalacionUploadSerializer, TipoDocumentoInstalacionSerializer
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 
@@ -137,6 +141,35 @@ def documento_es_convertible_a_pdf(doc: DocumentoInstalacion) -> bool:
 def get_office_converter_command():
     return shutil.which("soffice") or shutil.which("libreoffice")
 
+class TipoDocumentoInstalacionViewSet(viewsets.ModelViewSet):
+    queryset = TipoDocumentoInstalacion.objects.annotate(documentos_subidos=Count("documentos")).order_by("orden", "nombre", "id")
+    serializer_class = TipoDocumentoInstalacionSerializer
+    permission_classes = [IsZonaAdmin]
+    pagination_class = None
+
+    def perform_create(self, serializer):
+        try:
+            with transaction.atomic():
+                serializer.save()
+        except IntegrityError:
+            raise ValidationError({"nombre": "Ya existe un documento con ese nombre."})
+
+    def perform_update(self, serializer):
+        try:
+            with transaction.atomic():
+                serializer.instance = TipoDocumentoInstalacion.objects.select_for_update().get(pk=serializer.instance.pk)
+                serializer.save()
+        except IntegrityError:
+            raise ValidationError({"nombre": "Ya existe un documento con ese nombre."})
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        instance = TipoDocumentoInstalacion.objects.select_for_update().get(pk=instance.pk)
+        if instance.documentos.exists():
+            raise ValidationError({"detail": "Elimina primero los archivos de este tipo en las instalaciones. Luego podrás eliminar su nombre del catálogo."})
+        instance.delete()
+
+
 class DocumentoItemViewSet(viewsets.ModelViewSet):
     queryset = DocumentoItem.objects.all()
     serializer_class = DocumentoItemSerializer
@@ -171,41 +204,33 @@ def documentos_por_instalacion(request, instalacion_id: int):
         qs = DocumentoInstalacion.objects.filter(instalacion=instalacion)
         return Response(DocumentoInstalacionSerializer(qs, many=True).data)
 
-    # POST upload
     serializer = DocumentoInstalacionUploadSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-
-    file = serializer.validated_data["file"]
-    titulo = serializer.validated_data["titulo"]
-    categoria = serializer.validated_data.get("categoria", "")
-    clasificacion = serializer.validated_data.get("clasificacion", "confidencial")
-    estado_directiva = serializer.validated_data.get("estado_directiva", "sin_tramitar")
-
+    values = serializer.validated_data
+    file = values["file"]
     key = documento_upload_key(instalacion.id, getattr(file, "name", ""))
-
-    # Subir a R2
-    upload_document(file=file, key=key)
-
-    doc = DocumentoInstalacion.objects.create(
-        instalacion=instalacion,
-        titulo=titulo,
-        categoria=categoria,
-        clasificacion=clasificacion,
-        estado_directiva=estado_directiva,
-        storage_key=key,
-        nombre_original=getattr(file, "name", "") or "",
-        mime_type=getattr(file, "content_type", "") or "",
-        size=getattr(file, "size", 0) or 0,
-        creado_por=request.user,
-    )
-
-    return Response(
-        {
-            "id": doc.id,
-            "message": "Documento subido correctamente",
-        },
-        status=status.HTTP_201_CREATED,
-    )
+    uploaded = False
+    try:
+        with transaction.atomic():
+            tipo = get_object_or_404(TipoDocumentoInstalacion.objects.select_for_update(), pk=values["tipo_documento"].pk)
+            Instalacion.objects.select_for_update().get(pk=instalacion.pk)
+            if DocumentoInstalacion.objects.filter(instalacion=instalacion, tipo_documento=tipo).exists():
+                return Response({"detail": "Este documento ya está cargado. Usa Reemplazar documento."}, status=409)
+            upload_document(file=file, key=key)
+            uploaded = True
+            doc = DocumentoInstalacion.objects.create(
+                instalacion=instalacion, tipo_documento=tipo, categoria=tipo.codigo,
+                titulo=values["titulo"], clasificacion=values["clasificacion"],
+                estado_directiva=values["estado_directiva"], storage_key=key,
+                nombre_original=getattr(file, "name", "") or "",
+                mime_type=getattr(file, "content_type", "") or "",
+                size=getattr(file, "size", 0) or 0, creado_por=request.user)
+    except Exception:
+        if uploaded:
+            try: delete_document(key)
+            except Exception: logger.exception("No se pudo limpiar el archivo de una carga fallida")
+        raise
+    return Response({"id": doc.id, "message": "Documento subido correctamente"}, status=201)
 
 
 @api_view(["GET"])
@@ -282,62 +307,58 @@ def reemplazar_documento_instalacion(request, instalacion_id: int, documento_id:
     serializer = DocumentoInstalacionUploadSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
-    file = serializer.validated_data["file"]
-    titulo = serializer.validated_data["titulo"]
-    categoria = serializer.validated_data.get("categoria", "")
-    clasificacion = serializer.validated_data.get("clasificacion", "confidencial")
-    old_key = doc.storage_key
+    values = serializer.validated_data
+    file = values["file"]
     new_key = documento_upload_key(instalacion.id, getattr(file, "name", ""))
-
+    uploaded = False
     try:
-        upload_document(file=file, key=new_key)
-    except Exception as exc:
-        return Response(
-            {
-                "detail": "No se pudo subir el nuevo archivo a Cloudflare R2.",
-                "error": str(exc),
-            },
-            status=status.HTTP_502_BAD_GATEWAY,
-        )
+        with transaction.atomic():
+            tipo = get_object_or_404(TipoDocumentoInstalacion.objects.select_for_update(), pk=values["tipo_documento"].pk)
+            Instalacion.objects.select_for_update().get(pk=instalacion.pk)
+            doc = get_object_or_404(DocumentoInstalacion.objects.select_for_update(), pk=documento_id, instalacion=instalacion)
+            if DocumentoInstalacion.objects.filter(instalacion=instalacion, tipo_documento=tipo).exclude(pk=doc.pk).exists():
+                return Response({"detail": "Ya existe un archivo para ese tipo de documento."}, status=409)
+            old_key = doc.storage_key
+            upload_document(file=file, key=new_key)
+            uploaded = True
+            doc.titulo = values["titulo"]
+            doc.tipo_documento = tipo
+            doc.categoria = tipo.codigo
+            doc.clasificacion = values["clasificacion"]
+            doc.storage_key = new_key
+            doc.nombre_original = getattr(file, "name", "") or ""
+            doc.mime_type = getattr(file, "content_type", "") or ""
+            doc.size = getattr(file, "size", 0) or 0
+            doc.creado_por = request.user
+            doc.save()
+    except Exception:
+        if uploaded:
+            try: delete_document(new_key)
+            except Exception: logger.exception("No se pudo limpiar el reemplazo fallido")
+        raise
+    response = {**DocumentoInstalacionSerializer(doc).data, "message": "Documento reemplazado correctamente"}
+    for key in (old_key, f"documentos/previews/instalacion_{doc.instalacion_id}/documento_{doc.id}.pdf"):
+        try: delete_document(key)
+        except Exception:
+            logger.exception("No se pudo limpiar el archivo anterior del documento %s", doc.pk)
+            response["warning"] = "Documento actualizado, pero no se pudo eliminar el archivo anterior en R2."
+    return Response(response)
 
-    doc.titulo = titulo
-    doc.categoria = categoria
-    doc.clasificacion = clasificacion
-    doc.storage_key = new_key
-    doc.nombre_original = getattr(file, "name", "") or ""
-    doc.mime_type = getattr(file, "content_type", "") or ""
-    doc.size = getattr(file, "size", 0) or 0
-    doc.creado_por = request.user
-    doc.save(
-        update_fields=[
-            "titulo",
-            "categoria",
-            "clasificacion",
-            "storage_key",
-            "nombre_original",
-            "mime_type",
-            "size",
-            "creado_por",
-        ]
-    )
 
-    delete_warning = None
-    if old_key and old_key != new_key:
+@api_view(["DELETE"])
+@permission_classes([IsZonaAdmin])
+def eliminar_documento_instalacion(request, documento_id):
+    with transaction.atomic():
+        doc = get_object_or_404(DocumentoInstalacion.objects.select_for_update(), pk=documento_id)
         try:
-            delete_document(old_key)
-        except Exception as exc:
-            delete_warning = str(exc)
-
-    data = DocumentoInstalacionSerializer(doc).data
-    response = {
-        **data,
-        "message": "Documento reemplazado correctamente",
-    }
-    if delete_warning:
-        response["warning"] = "Documento actualizado, pero no se pudo eliminar el archivo anterior en R2."
-        response["delete_error"] = delete_warning
-
-    return Response(response, status=status.HTTP_200_OK)
+            # Delete preview first: on failure the original and database record remain available.
+            delete_document(f"documentos/previews/instalacion_{doc.instalacion_id}/documento_{doc.id}.pdf")
+            delete_document(doc.storage_key)
+        except Exception:
+            logger.exception("No se pudo eliminar de R2 el documento %s", doc.pk)
+            return Response({"detail": "No se pudo eliminar el archivo. El registro se conserva para reintentar."}, status=502)
+        doc.delete()
+    return Response(status=204)
 
 
 @api_view(["GET"])

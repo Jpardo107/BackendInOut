@@ -5,6 +5,7 @@ from .views import DocumentoItemViewSet, EstadoDocumentacionViewSet, EstadoDocum
 from . import views
 
 router = DefaultRouter()
+router.register(r'tipos-instalacion', views.TipoDocumentoInstalacionViewSet)
 router.register(r'documento-items', DocumentoItemViewSet)
 router.register(r'estado-documentacion', EstadoDocumentacionViewSet)
 
@@ -21,5 +22,6 @@ urlpatterns = [
         views.reemplazar_documento_instalacion,
     ),
     path("documentos/<int:documento_id>/access/", views.documento_access),
+    path("documentos/<int:documento_id>/", views.eliminar_documento_instalacion),
     path("documentos/<int:documento_id>/preview/", views.documento_preview),
 ]
