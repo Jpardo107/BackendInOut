@@ -53,6 +53,8 @@ urlpatterns = [
     path('api/documentacion/', include('documentacion.urls')),
     path('api/inventario/', include('inventario.urls')),
     path('api/postulaciones/', include('postulaciones.urls')),
+    path('api/contacto/', include('contacto.urls')),
+
     path('api/google-reviews/', include('google_reviews.urls')),
     path('api/vivadent/', include('vivadent.urls')),
     path('api/supervision/', include('supervision.urls')),

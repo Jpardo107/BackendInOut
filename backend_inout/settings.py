@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'inventario',
     'amonestaciones',
     'postulaciones',
+    'contacto',
     'google_reviews',
     'vivadent',
 ]
@@ -196,6 +197,14 @@ EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() in ("1", "true", "yes
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").lower() in ("1", "true", "yes")
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "alertas@inout.cl")
+CONTACT_ALLOWED_ORIGINS = tuple(
+    origin.strip().rstrip("/")
+    for origin in os.getenv(
+        "CONTACT_ALLOWED_ORIGINS",
+        "https://www.inout.cl,https://inout.cl",
+    ).split(",")
+    if origin.strip()
+)
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
