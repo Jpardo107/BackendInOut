@@ -8,7 +8,7 @@ TIPOS = [
     ("reunion", "Reunión"), ("administrativo", "Gestión administrativa"),
     ("personal", "Gestión de personal"), ("capacitacion", "Capacitación"),
     ("colacion", "Colación / pausa"), ("otro", "Otra actividad"),
-    ("supervision", "Supervisión"), ("solicitud", "Solicitud"),
+    ("supervision", "Supervisión"),
     ("vestuario_equipo", "Vestuario y equipo"), ("cargo_fijo", "Cargo fijo"),
     ("utiles_aseo", "Útiles de aseo"), ("informe", "Informe"),
     ("gasto", "Rendición de gastos"), ("vehiculo", "Vehículo"),

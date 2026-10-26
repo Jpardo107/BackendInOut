@@ -11,7 +11,6 @@ from .models import Actividad, DiaEspecial, Pauta, TIPOS
 LABELS = dict(TIPOS + [("extra", "Turno extra")])
 SOURCES = {
     "supervision": (Supervision, "supervisor"),
-    "solicitud": (Supervision, "supervisor"),
     "inventario": (MovimientoInventario, "usuario_registro"),
     "informe": (ReporteInforme, "usuario_creador"),
     "gasto": (RendicionGasto, "supervisor"),
@@ -24,8 +23,6 @@ def registro_pertenece(user, ref):
         source, pk = ref.split(":")
         model, owner = SOURCES[source]
         query = model.objects.filter(pk=int(pk), **{owner: user})
-        if source == "solicitud":
-            query = query.exclude(solicitudes__isnull=True).exclude(solicitudes="")
         return query.exists()
     except (ValueError, KeyError):
         return False
@@ -71,7 +68,7 @@ def actividades(user, filters):
                      "titulo": titulo, "detalle": detalle or "", "lugar": lugar, "estado": estado,
                      "origen": origen, "url": url, **extra})
 
-    for a in Actividad.objects.filter(usuario=user, fecha__range=(desde, hasta)).select_related("instalacion"):
+    for a in Actividad.objects.filter(usuario=user, fecha__range=(desde, hasta)).exclude(tipo="solicitud").exclude(registro_vinculado__startswith="solicitud:").select_related("instalacion"):
         add(f"manual:{a.pk}", a.fecha, a.hora_inicio, a.hora_fin, a.tipo, a.titulo, a.detalle,
             a.instalacion.nombre if a.instalacion else "", a.estado, registro_vinculado=a.registro_vinculado,
             actividad_id=a.pk, instalacion=a.instalacion_id)
@@ -79,9 +76,6 @@ def actividades(user, filters):
     for s in Supervision.objects.filter(supervisor=user, fecha__range=(desde, hasta)).select_related("instalacion"):
         add(f"supervision:{s.pk}", s.fecha, s.hora_inicio, s.hora_final, "supervision", f"Supervisión · {s.instalacion.nombre}",
             s.novedades, s.instalacion.nombre, origen="Supervisiones")
-        if s.solicitudes and s.solicitudes.strip():
-            add(f"solicitud:{s.pk}", s.fecha, s.hora_inicio, None, "solicitud", f"Solicitud · {s.instalacion.nombre}",
-                f"{s.solicitudes}\nEstado actual: {s.get_estado_solicitud_display()}", s.instalacion.nombre, origen="Supervisiones")
 
     for m in MovimientoInventario.objects.filter(usuario_registro=user, creado_en__gte=lower, creado_en__lt=upper).select_related("prenda", "destinatario_personal", "usuario_final"):
         local = m.creado_en.astimezone(tz)
@@ -153,5 +147,5 @@ def resumen(user, filters, rows):
             lines.extend(f"  {line}" for line in row["detalle"].splitlines())
     if not completed:
         lines.append("Sin actividades realizadas para estos filtros.")
-    lines += ["", "_INOUT · Planificación personal_", "_Solicitudes y movimientos muestran su estado actual._"]
+    lines += ["", "_INOUT · Planificación personal_", "_Los movimientos muestran su estado actual._"]
     return {"texto": "\n".join(lines), "total": len(completed), "por_tipo": dict(counts), "registros": completed}

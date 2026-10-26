@@ -48,7 +48,8 @@ class DiaViewSet(PersonalViewSet):
 
 
 class ActividadViewSet(PersonalViewSet):
-    queryset = Actividad.objects.all()
+    # Keep legacy request plans stored, but exclude this retired feature from the module.
+    queryset = Actividad.objects.exclude(tipo="solicitud").exclude(registro_vinculado__startswith="solicitud:")
     serializer_class = ActividadSerializer
 
     def get_queryset(self):

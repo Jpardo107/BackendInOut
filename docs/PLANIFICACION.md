@@ -15,13 +15,13 @@ No se copian ni modifican los registros de los módulos originales. Se consultan
 
 | Origen | Propietario | Fecha utilizada |
 | --- | --- | --- |
-| Supervisión y solicitud asociada | `supervisor` | Fecha y hora de inicio registradas |
+| Supervisión | `supervisor` | Fecha y hora de inicio registradas |
 | Movimiento de inventario, por categoría (vestuario/equipo, cargo fijo, útiles de aseo) | `usuario_registro` | Creación convertida a zona del dispositivo |
 | Informe generado | `usuario_creador` | Creación convertida a zona del dispositivo |
 | Rendición | `supervisor` | Creación convertida a zona del dispositivo |
 | Movimiento de vehículo | `supervisor` | Creación convertida a zona del dispositivo |
 
-Los horarios automáticos conservan sus minutos originales. Las solicitudes y los movimientos muestran el estado **actual**, no un estado histórico reconstruido. Los despachos, devoluciones y ajustes se describen con su tipo y estado originales; no se presentan todos como entregas recibidas. La solicitud y la supervisión son dos registros distintos y se desglosan por tipo; el total no representa horas trabajadas.
+Los horarios automáticos conservan sus minutos originales. Los movimientos muestran el estado **actual**, no un estado histórico reconstruido. Los despachos, devoluciones y ajustes se describen con su tipo y estado originales; no se presentan todos como entregas recibidas. El total de registros no representa horas trabajadas. Las solicitudes de supervisión no se incorporan a Planificación.
 
 Una actividad manual realizada puede vincularse con un registro original. El servidor valida que exista y pertenezca al mismo usuario. El plan vinculado se conserva en la agenda y se excluye del conteo: cuenta el registro original en su fecha y categoría. Si el original se elimina posteriormente, el plan mantiene su referencia y puede desvincularse al editarlo.
 
@@ -41,3 +41,12 @@ No se configura una pauta de producción por defecto ni se generan actividades r
 ```
 
 Las pruebas usan una base SQLite temporal y cubren acceso, aislamiento, CRUD, ciclos, cambios de pauta, excepciones, turnos nocturnos, minutos permitidos, fecha local, fuentes automáticas, vínculos sin duplicación y filtros.
+
+## Retiro de solicitudes de supervisión
+
+Las solicitudes se excluyen de la agenda, los conteos, los tipos de actividad,
+los vínculos y el resumen para WhatsApp. Las supervisiones siguen apareciendo
+con sus horarios, instalación y novedades. Los datos originales de solicitudes
+permanecen en Supervisiones. Los planes antiguos de tipo `solicitud` o vinculados
+a `solicitud:ID` se conservan almacenados, pero no se muestran en Planificación.
+La migración `0002_alter_actividad_tipo` retira la opción del catálogo sin borrar datos.

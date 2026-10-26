@@ -114,14 +114,14 @@ class PlanificacionTests(TestCase):
         expense = RendicionGasto.objects.create(supervisor=self.jaime, supervisor_nombre="Jaime Pardo", instalacion="Planta Norte", persona="Guardia", monto=12500, motivo="Traslado", storage_key="test")
         RendicionGasto.objects.filter(pk=expense.pk).update(creada_en=datetime(2026, 10, 25, 4, tzinfo=timezone.utc))
         data = self.panel()
-        self.assertEqual(data["resumen"]["total"], 4)
+        self.assertEqual(data["resumen"]["total"], 3)
         self.assertIn("09:17–09:48", data["resumen"]["texto"])
         self.assertIn("23:15", data["resumen"]["texto"])
         self.assertIn("$12.500", data["resumen"]["texto"])
         self.assertNotIn("No mostrar", data["resumen"]["texto"])
-        self.assertEqual(self.panel(tipo="solicitud")["resumen"]["total"], 1)
+        self.assertNotIn("Solicitar parkas", data["resumen"]["texto"])
         self.assertEqual(self.panel(hora_desde="20:00", hora_hasta="08:00")["resumen"]["total"], 2)
-        self.assertEqual(self.panel(hora_desde="09:00", hora_hasta="10:00")["resumen"]["total"], 2)
+        self.assertEqual(self.panel(hora_desde="09:00", hora_hasta="10:00")["resumen"]["total"], 1)
 
     def test_linked_plan_counted_once_and_cannot_link_other_user(self):
         source = self.supervision()
@@ -164,3 +164,24 @@ class PlanificacionTests(TestCase):
         response = self.client.patch(f"/api/planificacion/dias/{one.pk}/", {"fecha": "2026-10-26"})
         self.assertEqual(response.status_code, 400)
         self.assertEqual(DiaEspecial.objects.count(), 2)
+
+    def test_supervision_requests_are_removed_from_planning_without_erasing_sources(self):
+        source = self.supervision(solicitudes="Reponer uniformes", estado_solicitud="pendiente")
+        legacy = Actividad.objects.create(usuario=self.jaime, **{**self.payload, "tipo": "solicitud", "titulo": "Solicitud anterior", "estado": "realizada"})
+        linked = Actividad.objects.create(usuario=self.jaime, **{**self.payload, "titulo": "Plan vinculado anterior", "estado": "realizada", "registro_vinculado": f"solicitud:{source.pk}"})
+        data = self.panel()
+        self.assertEqual([r["id"] for r in data["actividades"]], [f"supervision:{source.pk}"])
+        self.assertEqual(data["resumen"]["total"], 1)
+        self.assertNotIn("Reponer uniformes", data["resumen"]["texto"])
+        self.assertNotIn("Solicitud", data["resumen"]["texto"])
+        self.assertIn("Todo revisado", data["resumen"]["texto"])
+        self.assertNotIn("solicitud", [t["value"] for t in self.client.get("/api/planificacion/opciones/").data["tipos"]])
+        filters = {"desde": "2026-10-25", "hasta": "2026-10-25"}
+        self.assertEqual(self.client.get("/api/planificacion/actividades/", filters).data, [])
+        self.assertEqual(self.client.get("/api/planificacion/panel/", {**filters, "tipo": "solicitud"}).status_code, 400)
+        for extra in ({"tipo": "solicitud"}, {"registro_vinculado": f"solicitud:{source.pk}", "estado": "realizada"}):
+            self.assertEqual(self.client.post("/api/planificacion/actividades/", {**self.payload, **extra}, format="json").status_code, 400)
+        source.refresh_from_db()
+        self.assertEqual(source.solicitudes, "Reponer uniformes")
+        self.assertTrue(Actividad.objects.filter(pk=legacy.pk).exists())
+        self.assertTrue(Actividad.objects.filter(pk=linked.pk).exists())
