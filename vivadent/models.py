@@ -86,3 +86,19 @@ class StoreSession(models.Model):
     cart_ids = models.JSONField(default=list, blank=True)
     last_seen = models.DateTimeField(db_index=True)
     active = models.BooleanField(default=True)
+
+
+class VisitNotification(models.Model):
+    session_id = models.CharField(max_length=64, unique=True)
+    path = models.CharField(max_length=300)
+    source = models.CharField(max_length=100, blank=True)
+    device = models.CharField(max_length=20, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    next_at = models.DateTimeField(db_index=True)
+    attempts = models.PositiveIntegerField(default=0)
+
+
+class TelegramDispatch(models.Model):
+    next_send_at = models.DateTimeField()
+    lease = models.CharField(max_length=36, blank=True)

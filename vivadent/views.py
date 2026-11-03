@@ -139,9 +139,12 @@ class TrackEventView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         if data.get("event_id"):
-            AnalyticsEvent.objects.get_or_create(event_id=data["event_id"], defaults=data)
+            event, created = AnalyticsEvent.objects.get_or_create(event_id=data["event_id"], defaults=data)
         else:
-            serializer.save()
+            event, created = serializer.save(), True
+        if created:
+            from .notifications import notify_visit
+            notify_visit(request, event)
         return Response(status=status.HTTP_201_CREATED)
 
 
