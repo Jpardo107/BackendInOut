@@ -90,6 +90,7 @@ class SupervisionDetailSerializer(serializers.ModelSerializer):
             'estado_documentos',
             'fotos',
             'estado_solicitud',
+            'detalles_revision',
         ]
 
     def get_supervisor_nombre(self, obj):

@@ -49,6 +49,7 @@ class Supervision(models.Model):
         choices=ESTADO_SOLICITUD_CHOICES,
         default='pendiente',  # Valor predeterminado
     )
+    detalles_revision = models.JSONField(default=dict, blank=True)
 
 
     def __str__(self):
