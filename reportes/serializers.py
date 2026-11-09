@@ -129,7 +129,7 @@ class ReporteInformeDetailSerializer(serializers.ModelSerializer):
 
 
 class ReporteInformeCreateSerializer(serializers.ModelSerializer):
-    instalacion = serializers.PrimaryKeyRelatedField(queryset=Instalacion.objects.all())
+    instalacion = serializers.PrimaryKeyRelatedField(queryset=Instalacion.objects.filter(activa=True))
     tipo_reporte = serializers.CharField()
     fecha_emision = serializers.DateField(required=False)
     autor_nombre = serializers.CharField(max_length=255, required=False, allow_blank=True)

@@ -194,7 +194,7 @@ class EstadoDocumentacionCreateAPIView(generics.CreateAPIView):
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def documentos_por_instalacion(request, instalacion_id: int):
-    instalacion = get_object_or_404(Instalacion, id=instalacion_id)
+    instalacion = get_object_or_404(Instalacion, id=instalacion_id, activa=True)
 
 
     if not user_can_access_instalacion(request.user, instalacion):
@@ -236,7 +236,7 @@ def documentos_por_instalacion(request, instalacion_id: int):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def documentos_instalacion_zip(request, instalacion_id: int):
-    instalacion = get_object_or_404(Instalacion, id=instalacion_id)
+    instalacion = get_object_or_404(Instalacion, id=instalacion_id, activa=True)
 
     if not user_can_access_instalacion(request.user, instalacion):
         return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
@@ -294,7 +294,7 @@ def documentos_instalacion_zip(request, instalacion_id: int):
 @api_view(["PUT"])
 @permission_classes([IsAuthenticated])
 def reemplazar_documento_instalacion(request, instalacion_id: int, documento_id: int):
-    instalacion = get_object_or_404(Instalacion, id=instalacion_id)
+    instalacion = get_object_or_404(Instalacion, id=instalacion_id, activa=True)
     doc = get_object_or_404(
         DocumentoInstalacion,
         id=documento_id,

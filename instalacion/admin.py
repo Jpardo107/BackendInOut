@@ -25,6 +25,12 @@ class InstalacionAdmin(admin.ModelAdmin):
     list_filter = ('zona', 'estado_directiva')
     search_fields = ('nombre', 'comuna', 'nombre_contacto')
 
+    def get_queryset(self, request):
+        return super().get_queryset(request).filter(activa=True)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(Zona)
 class ZonaAdmin(admin.ModelAdmin):

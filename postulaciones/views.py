@@ -682,7 +682,7 @@ class AdminPostulacionViewSet(viewsets.ModelViewSet):
 
 class VacanteAdminViewSet(viewsets.ModelViewSet):
     permission_classes = [IsPostulacionesAdmin]
-    queryset = VacanteGuardia.objects.select_related("instalacion", "tipo_instalacion")
+    queryset = VacanteGuardia.objects.filter(instalacion__activa=True).select_related("instalacion", "tipo_instalacion")
     serializer_class = VacanteAdminSerializer
 
 

@@ -19,6 +19,7 @@ class Zona(models.Model):
         return self.nombre
 
 class Instalacion(models.Model):
+    activa = models.BooleanField(default=True, db_index=True)
     ESTADO_DIRECTIVA_CHOICES = [
         ("no_existe", "No existe"),
         ("vencida", "Vencida"),

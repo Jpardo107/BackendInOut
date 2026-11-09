@@ -14,7 +14,7 @@ class ZonaSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "instalaciones_asignadas", "creado_en", "actualizado_en")
 
     def get_instalaciones_asignadas(self, obj):
-        return Instalacion.objects.filter(zona=obj.codigo).count()
+        return Instalacion.objects.filter(zona=obj.codigo, activa=True).count()
 
     def update(self, instance, validated_data):
         codigo_anterior = instance.codigo
@@ -27,6 +27,7 @@ class ZonaSerializer(serializers.ModelSerializer):
 class InstalacionSerializer(serializers.ModelSerializer):
     cantidad_guardias = serializers.IntegerField(read_only=True)
     zona_nombre = serializers.SerializerMethodField()
+    soft_delete_supported = serializers.BooleanField(read_only=True, default=True)
 
     class Meta:
         model = Instalacion

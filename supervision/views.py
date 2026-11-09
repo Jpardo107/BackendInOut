@@ -62,7 +62,7 @@ class SupervisionViewSet(viewsets.ModelViewSet):
     serializer_class = SupervisionSerializer
 
     def get_queryset(self):
-        queryset = Supervision.objects.select_related('instalacion', 'supervisor').prefetch_related('fotos')
+        queryset = Supervision.objects.filter(instalacion__activa=True).select_related('instalacion', 'supervisor').prefetch_related('fotos')
 
         if getattr(self, "action", None) == "list":
             mes, anio = get_mes_anio_from_request(self.request)
@@ -91,7 +91,7 @@ class SupervisionViewSet(viewsets.ModelViewSet):
             raise ValidationError({"instalacion": "Este campo es obligatorio."})
 
         try:
-            instalacion = Instalacion.objects.get(pk=instalacion_id)
+            instalacion = Instalacion.objects.get(pk=instalacion_id, activa=True)
         except (Instalacion.DoesNotExist, TypeError, ValueError):
             raise ValidationError({"instalacion": "La instalación no existe."})
 
@@ -149,7 +149,7 @@ class SupervisionViewSet(viewsets.ModelViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
         active = (
             SupervisionActiva.objects.select_related("instalacion", "supervisor")
-            .filter(supervisor=request.user)
+            .filter(supervisor=request.user, instalacion__activa=True)
             .first()
         )
         return Response(active_supervision_summary(active) if active else None)
@@ -158,7 +158,7 @@ class SupervisionViewSet(viewsets.ModelViewSet):
     def activas(self, request):
         if not can_access_live(request.user):
             return Response({"detail": "No autorizado."}, status=status.HTTP_403_FORBIDDEN)
-        active = SupervisionActiva.objects.select_related("instalacion", "supervisor")
+        active = SupervisionActiva.objects.select_related("instalacion", "supervisor").filter(instalacion__activa=True)
         return Response([active_supervision_summary(item) for item in active])
 
     def partial_update(self, request, *args, **kwargs):
@@ -206,6 +206,7 @@ class SupervisionDetailViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         queryset = (
             Supervision.objects
+            .filter(instalacion__activa=True)
             .select_related("instalacion", "supervisor")
             .prefetch_related(
                 "estado_cargos_fijos",

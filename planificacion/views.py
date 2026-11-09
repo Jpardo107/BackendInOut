@@ -85,6 +85,6 @@ def opciones(request):
     return Response({
         "tipos": [{"value": k, "label": v} for k, v in TIPOS],
         "jornadas": [{"value": k, "label": v} for k, v in JORNADAS],
-        "instalaciones": list(Instalacion.objects.order_by("nombre").values("id", "nombre")),
+        "instalaciones": list(Instalacion.objects.filter(activa=True).order_by("nombre").values("id", "nombre")),
         "pautas": PautaSerializer(Pauta.objects.filter(usuario=request.user), many=True).data,
     })

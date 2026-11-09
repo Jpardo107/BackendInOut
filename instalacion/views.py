@@ -24,14 +24,17 @@ class ZonaViewSet(viewsets.ModelViewSet):
     permission_classes = [IsZonaAdmin]
 
     def perform_destroy(self, instance):
-        cantidad = Instalacion.objects.filter(zona=instance.codigo).count()
+        cantidad = Instalacion.objects.filter(zona=instance.codigo, activa=True).count()
         if cantidad:
             raise ValidationError({"detail": f"No se puede eliminar la zona porque tiene {cantidad} instalación(es) asignada(s)."})
         instance.delete()
 
 class InstalacionViewSet(viewsets.ModelViewSet):
-    queryset = Instalacion.objects.annotate(
+    queryset = Instalacion.objects.filter(activa=True).annotate(
         cantidad_guardias=Count("personal", filter=Q(personal__activo=True), distinct=True)
     )
     serializer_class = InstalacionSerializer
     permission_classes = [permissions.IsAuthenticated]  # Solo usuarios autenticados
+
+    def perform_destroy(self, instance):
+        Instalacion.objects.filter(pk=instance.pk, activa=True).update(activa=False)

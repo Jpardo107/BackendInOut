@@ -377,7 +377,7 @@ class ReporteInformeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = (
-            ReporteInforme.objects.select_related("instalacion", "usuario_creador")
+            ReporteInforme.objects.filter(instalacion__activa=True).select_related("instalacion", "usuario_creador")
             .prefetch_related("imagenes")
             .annotate(cantidad_imagenes=Count("imagenes"))
         )

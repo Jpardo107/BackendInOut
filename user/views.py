@@ -40,7 +40,7 @@ class PersonalEmpresaViewSet(viewsets.ModelViewSet):
     parser_classes = [JSONParser, FormParser, MultiPartParser]
 
     def get_queryset(self):
-        queryset = PersonalEmpresa.objects.select_related("instalacion")
+        queryset = PersonalEmpresa.objects.select_related("instalacion").filter(instalacion__activa=True)
         search = self.request.query_params.get("search", "").strip()
         ubicacion = self.request.query_params.get("ubicacion", "").strip()
         activo = self.request.query_params.get("activo")
@@ -71,11 +71,11 @@ class PersonalEmpresaViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="dashboard")
     def dashboard(self, request):
-        total = PersonalEmpresa.objects.count()
-        activos = PersonalEmpresa.objects.filter(activo=True).count()
+        total = PersonalEmpresa.objects.filter(instalacion__activa=True).count()
+        activos = PersonalEmpresa.objects.filter(instalacion__activa=True, activo=True).count()
         inactivos = total - activos
         por_ubicacion = (
-            PersonalEmpresa.objects
+            PersonalEmpresa.objects.filter(instalacion__activa=True)
             .values("ubicacion")
             .annotate(total=Count("id"))
             .order_by("-total", "ubicacion")

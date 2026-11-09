@@ -17,7 +17,7 @@ def normalizar_nombre_instalacion(value):
 
 
 def construir_indice_instalaciones(queryset=None):
-    instalaciones = queryset if queryset is not None else Instalacion.objects.all()
+    instalaciones = queryset if queryset is not None else Instalacion.objects.filter(activa=True)
     indice = {}
     ambiguas = set()
 
