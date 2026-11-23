@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.core.validators import MinValueValidator
 from user.models import Usuario
@@ -50,6 +51,8 @@ class Supervision(models.Model):
         default='pendiente',  # Valor predeterminado
     )
     detalles_revision = models.JSONField(default=dict, blank=True)
+    # Null en supervisiones anteriores a este campo; para ellas se usa fecha + hora_final.
+    creada_en = models.DateTimeField(auto_now_add=True, null=True, db_index=True)
 
 
     def __str__(self):
@@ -82,3 +85,36 @@ class SupervisionActiva(models.Model):
 
     def __str__(self):
         return f"{self.supervisor} - {self.instalacion} - {self.fecha} {self.hora_inicio}"
+
+
+class ConfiguracionResumenSolicitudes(models.Model):
+    """Destinatarios del correo diario (lunes a viernes, 07:00) con las solicitudes de supervisión."""
+    activo = models.BooleanField(default=True)
+    destinatarios = models.JSONField(default=list, blank=True)
+    actualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="configuraciones_resumen_solicitudes",
+    )
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuración de correo de solicitudes"
+        verbose_name_plural = "Configuración de correo de solicitudes"
+
+
+class EnvioResumenSolicitudes(models.Model):
+    fecha = models.DateField(help_text="Día (hora Chile) al que corresponde el envío programado.")
+    prueba = models.BooleanField(default=False)
+    desde = models.DateTimeField()
+    hasta = models.DateTimeField()
+    cantidad = models.PositiveIntegerField(default=0)
+    destinatarios = models.JSONField(default=list, blank=True)
+    enviado = models.BooleanField(default=False)
+    error = models.TextField(blank=True, default="")
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-creado_en", "-id"]

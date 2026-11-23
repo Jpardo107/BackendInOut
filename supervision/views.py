@@ -3,7 +3,7 @@ from rest_framework import permissions, viewsets, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.views import APIView
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_time
@@ -15,8 +15,15 @@ from backend_inout.live_events import (
     supervision_started_summary,
 )
 from instalacion.models import Instalacion
-from .models import Supervision, FotoSupervision, SupervisionActiva
-from .serializers import SupervisionSerializer, SupervisionDetailSerializer, FotoSupervisionSerializer
+from .models import EnvioResumenSolicitudes, Supervision, FotoSupervision, SupervisionActiva
+from .serializers import (
+    ConfiguracionResumenSolicitudesSerializer,
+    SupervisionSerializer,
+    SupervisionDetailSerializer,
+    FotoSupervisionSerializer,
+)
+from .resumen_solicitudes import enviar_resumen, get_configuracion as get_configuracion_resumen
+from inventario.views import user_has_inventory_admin_role
 from .storage import photo_response, save_supervision_photo
 from reportes.views import _prepare_image_for_storage, _validate_images
 
@@ -265,3 +272,51 @@ class FotoSupervisionPublicView(APIView):
 
     def get(self, request, key):
         return photo_response(key)
+
+
+class ConfiguracionResumenSolicitudesView(APIView):
+    """GET/PUT destinatarios del correo diario de solicitudes; POST envía una prueba con las últimas solicitudes."""
+
+    def check_permissions(self, request):
+        super().check_permissions(request)
+        if not user_has_inventory_admin_role(request.user):
+            raise PermissionDenied("Solo usuarios administrativos pueden configurar el correo de solicitudes.")
+
+    def _data(self, configuracion):
+        data = ConfiguracionResumenSolicitudesSerializer(configuracion).data
+        ultimo = EnvioResumenSolicitudes.objects.first()
+        data["ultimo_envio"] = (
+            {
+                "creado_en": ultimo.creado_en,
+                "prueba": ultimo.prueba,
+                "enviado": ultimo.enviado,
+                "cantidad": ultimo.cantidad,
+                "destinatarios": ultimo.destinatarios,
+                "error": ultimo.error,
+            }
+            if ultimo else None
+        )
+        return data
+
+    def get(self, request):
+        return Response(self._data(get_configuracion_resumen()))
+
+    def put(self, request):
+        configuracion = get_configuracion_resumen()
+        serializer = ConfiguracionResumenSolicitudesSerializer(configuracion, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(actualizado_por=request.user)
+        return Response(self._data(configuracion))
+
+    patch = put
+
+    def post(self, request):
+        if not get_configuracion_resumen().destinatarios:
+            raise ValidationError({"detail": "Guarda al menos un correo destinatario antes de realizar la prueba."})
+        envio = enviar_resumen(prueba=True)
+        if not envio.enviado:
+            return Response(
+                {"detail": f"No fue posible enviar el correo de prueba: {envio.error[:500]}"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({"detail": f"Correo de prueba enviado con {envio.cantidad} solicitudes.", "cantidad": envio.cantidad})

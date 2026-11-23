@@ -201,6 +201,9 @@ EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() in ("1", "true", "yes
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").lower() in ("1", "true", "yes")
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "alertas@inout.cl")
+# Remitente de las alertas de inventario y del resumen diario de solicitudes.
+# El servidor SMTP (EMAIL_HOST_USER) debe estar autorizado para enviar como esta dirección.
+INFORMACIONES_FROM_EMAIL = os.getenv("INFORMACIONES_FROM_EMAIL", "informaciones@inout.cl")
 CONTACT_ALLOWED_ORIGINS = tuple(
     origin.strip().rstrip("/")
     for origin in os.getenv(

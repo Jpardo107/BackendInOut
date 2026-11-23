@@ -54,7 +54,7 @@ def user_has_inventory_admin_role(user):
 def get_email_delivery_diagnostics():
     backend = str(getattr(settings, "EMAIL_BACKEND", ""))
     host = str(getattr(settings, "EMAIL_HOST", ""))
-    sender = str(getattr(settings, "DEFAULT_FROM_EMAIL", ""))
+    sender = str(getattr(settings, "INFORMACIONES_FROM_EMAIL", ""))
     backend_key = backend.lower()
     errors = []
 
@@ -808,7 +808,7 @@ class ConfiguracionAlertaStockView(APIView):
                     "Este es un correo de prueba del sistema de alertas de stock de INOUT.\n\n"
                     "La configuración de correo está operativa."
                 ),
-                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+                from_email=settings.INFORMACIONES_FROM_EMAIL,
                 to=destinatarios,
             )
             message.attach_alternative(

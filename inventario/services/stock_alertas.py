@@ -60,7 +60,7 @@ def enviar_alerta_stock(prenda_id, stock_actual, stock_critico, movimiento_id=No
         message = EmailMultiAlternatives(
             subject=subject,
             body=text,
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            from_email=settings.INFORMACIONES_FROM_EMAIL,
             to=destinatarios,
         )
         message.attach_alternative(html, "text/html")

@@ -1,6 +1,6 @@
 # supervision/serializers.py
 from rest_framework import serializers
-from .models import Supervision, FotoSupervision
+from .models import ConfiguracionResumenSolicitudes, Supervision, FotoSupervision
 from cargo_fijo.models import EstadoCargoFijo
 from documentacion.models import EstadoDocumentacion
 
@@ -95,3 +95,25 @@ class SupervisionDetailSerializer(serializers.ModelSerializer):
 
     def get_supervisor_nombre(self, obj):
         return f"{obj.supervisor.nombres} {obj.supervisor.apellidos}" if obj.supervisor else None
+
+
+class ConfiguracionResumenSolicitudesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConfiguracionResumenSolicitudes
+        fields = ("activo", "destinatarios", "actualizado_en")
+        read_only_fields = ("actualizado_en",)
+
+    def validate_destinatarios(self, value):
+        from .resumen_solicitudes import MAX_DESTINATARIOS
+
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Debe ser una lista de correos.")
+        field = serializers.EmailField()
+        limpios = []
+        for email in value:
+            email = field.run_validation(str(email or "").strip().lower())
+            if email not in limpios:
+                limpios.append(email)
+        if len(limpios) > MAX_DESTINATARIOS:
+            raise serializers.ValidationError(f"Máximo {MAX_DESTINATARIOS} destinatarios.")
+        return limpios

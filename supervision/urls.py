@@ -6,6 +6,7 @@ from .views import (
     FotoSupervisionViewSet,
     FotoSupervisionUploadView,
     FotoSupervisionPublicView,
+    ConfiguracionResumenSolicitudesView,
 )
 from .rendiciones import RendicionGastoViewSet
 
@@ -16,6 +17,7 @@ router.register(r'detalle-supervisiones', SupervisionDetailViewSet, basename='de
 router.register(r'fotos-supervision', FotoSupervisionViewSet, basename='foto-supervision')
 
 urlpatterns = [
+    path('correo-solicitudes/', ConfiguracionResumenSolicitudesView.as_view(), name='supervision-correo-solicitudes'),
     path('fotos/upload/', FotoSupervisionUploadView.as_view(), name='supervision-foto-upload'),
     path('fotos/media/<path:key>', FotoSupervisionPublicView.as_view(), name='supervision-foto-publica'),
     path('', include(router.urls)),
