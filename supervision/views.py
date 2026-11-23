@@ -83,7 +83,8 @@ class SupervisionViewSet(viewsets.ModelViewSet):
         return queryset.order_by("-fecha", "-hora_inicio")
 
     def perform_create(self, serializer):
-        supervision = serializer.save()
+        # El supervisor es quien inició sesión; no se confía en el id que envía el teléfono.
+        supervision = serializer.save(supervisor=self.request.user)
         SupervisionActiva.objects.filter(supervisor_id=supervision.supervisor_id).delete()
         summary = supervision_summary(supervision)
         schedule_live_event("supervision.created", summary, source=supervision)

@@ -31,7 +31,8 @@ class SupervisionLiveEventTests(SimpleTestCase):
         serializer = Mock()
         serializer.save.return_value = supervision
 
-        SupervisionViewSet().perform_create(serializer)
+        SupervisionViewSet(request=SimpleNamespace(user=supervision.supervisor)).perform_create(serializer)
+        serializer.save.assert_called_once_with(supervisor=supervision.supervisor)
         active_filter_mock.return_value.delete.assert_called_once()
 
         event_types = [call.args[0] for call in publish_mock.call_args_list]
@@ -282,3 +283,62 @@ class ResumenSolicitudesTests(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json()["destinatarios"], ["x@inout.cl", "y@inout.cl"])
         self.assertEqual(client.put("/api/supervision/correo-solicitudes/", {"destinatarios": ["no-es-correo"]}, format="json").status_code, 400)
+
+
+class CorreccionesResumenSolicitudesTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from instalacion.models import Instalacion
+
+        self.usuario = get_user_model().objects.create_user(username="sup-real", password="x", nombres="Luis", apellidos="Soto")
+        self.instalacion = Instalacion.objects.create(nombre="Torre Norte")
+
+    def test_limpia_creada_en_retroactivo_y_conserva_las_nuevas(self):
+        from datetime import datetime, timezone as dt_timezone
+        from importlib import import_module
+        from django.apps import apps
+        from supervision.models import Supervision
+
+        migracion = datetime(2026, 11, 23, 20, 47, tzinfo=dt_timezone.utc)
+        nueva = datetime(2026, 11, 23, 21, 30, tzinfo=dt_timezone.utc)
+        ids = []
+        for valor in (migracion, migracion, nueva):
+            s = Supervision.objects.create(instalacion=self.instalacion, fecha=date(2026, 11, 20), hora_inicio=time(8), hora_final=time(9))
+            Supervision.objects.filter(pk=s.pk).update(creada_en=valor)
+            ids.append(s.pk)
+
+        import_module("supervision.migrations.0012_limpiar_creada_en_retroactivo").limpiar_creada_en_retroactivo(apps, None)
+
+        valores = dict(Supervision.objects.filter(pk__in=ids).values_list("pk", "creada_en"))
+        self.assertIsNone(valores[ids[0]])
+        self.assertIsNone(valores[ids[1]])
+        self.assertEqual(valores[ids[2]], nueva)
+
+    def test_ignora_textos_sin_solicitud(self):
+        from supervision.resumen_solicitudes import es_solicitud_real
+
+        for texto in ("Ninguna", " ninguna. ", "NO", "Sin solicitudes", "n/a", ""):
+            self.assertFalse(es_solicitud_real(texto), texto)
+        self.assertTrue(es_solicitud_real("Ninguna\n\nFalta documentación de José"))
+
+    def test_supervisor_es_el_usuario_autenticado(self):
+        from django.contrib.auth import get_user_model
+        from rest_framework.test import APIClient
+        from supervision.models import Supervision
+
+        otro = get_user_model().objects.create_user(username="otro", password="x", email="otro@inout.cl", rut="22222222-2")
+        client = APIClient()
+        client.force_authenticate(self.usuario)
+        with patch("supervision.views.schedule_live_event"):
+            response = client.post("/api/supervision/supervisiones/", {
+                "instalacion": self.instalacion.pk, "supervisor": None, "fecha": "2026-11-23",
+                "hora_inicio": "08:00", "hora_final": "09:00", "solicitudes": "Linterna",
+            }, format="json")
+            self.assertEqual(response.status_code, 201, response.content)
+            self.assertEqual(Supervision.objects.get(pk=response.json()["id"]).supervisor, self.usuario)
+
+            response = client.post("/api/supervision/supervisiones/", {
+                "instalacion": self.instalacion.pk, "supervisor": otro.pk, "fecha": "2026-11-23",
+                "hora_inicio": "08:00", "hora_final": "09:00",
+            }, format="json")
+            self.assertEqual(Supervision.objects.get(pk=response.json()["id"]).supervisor, self.usuario)

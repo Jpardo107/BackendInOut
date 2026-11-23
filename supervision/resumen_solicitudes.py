@@ -16,6 +16,15 @@ logger = logging.getLogger(__name__)
 CHILE_TZ = ZoneInfo("America/Santiago")
 HORA_ENVIO = 7
 MAX_DESTINATARIOS = 20
+# Textos con los que los supervisores indican que no hay solicitudes.
+SIN_SOLICITUD = {
+    "sin solicitudes", "sin solicitud", "ninguna", "ninguno", "nada", "no", "no hay", "n/a", "na", "-", "s/s",
+}
+
+
+def es_solicitud_real(texto):
+    normalizado = " ".join((texto or "").lower().split()).strip(" .,;:!¡")
+    return bool(normalizado) and normalizado not in SIN_SOLICITUD
 
 
 def get_configuracion():
@@ -52,7 +61,7 @@ def solicitudes_entre(desde, hasta):
     filas = []
     for supervision in candidatas:
         texto = supervision.solicitudes.strip()
-        if not texto or texto.lower() == "sin solicitudes":
+        if not es_solicitud_real(texto):
             continue
         momento = _momento_solicitud(supervision)
         if not desde <= momento < hasta:
