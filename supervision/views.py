@@ -22,6 +22,7 @@ from .serializers import (
     SupervisionDetailSerializer,
     FotoSupervisionSerializer,
 )
+from .texto_solicitud import es_solicitud_real
 from .resumen_solicitudes import enviar_resumen, get_configuracion as get_configuracion_resumen
 from inventario.views import user_has_inventory_admin_role
 from .storage import photo_response, save_supervision_photo
@@ -89,8 +90,7 @@ class SupervisionViewSet(viewsets.ModelViewSet):
         summary = supervision_summary(supervision)
         schedule_live_event("supervision.created", summary, source=supervision)
         schedule_live_event("supervision.completed", summary, source=supervision)
-        solicitud = (supervision.solicitudes or "").strip().lower()
-        if solicitud and solicitud != "sin solicitudes":
+        if es_solicitud_real(supervision.solicitudes):
             schedule_live_event(
                 "solicitud.created",
                 solicitud_summary(supervision),
@@ -200,8 +200,7 @@ class SupervisionViewSet(viewsets.ModelViewSet):
 
         summary = supervision_summary(instance)
         schedule_live_event("supervision.updated", summary, source=instance)
-        solicitud = (instance.solicitudes or "").strip().lower()
-        if solicitud and solicitud != "sin solicitudes":
+        if es_solicitud_real(instance.solicitudes):
             schedule_live_event(
                 "solicitud.updated",
                 solicitud_summary(instance),

@@ -10,21 +10,13 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .models import ConfiguracionResumenSolicitudes, EnvioResumenSolicitudes, Supervision
+from .texto_solicitud import es_solicitud_real
 
 logger = logging.getLogger(__name__)
 
 CHILE_TZ = ZoneInfo("America/Santiago")
 HORA_ENVIO = 7
 MAX_DESTINATARIOS = 20
-# Textos con los que los supervisores indican que no hay solicitudes.
-SIN_SOLICITUD = {
-    "sin solicitudes", "sin solicitud", "ninguna", "ninguno", "nada", "no", "no hay", "n/a", "na", "-", "s/s",
-}
-
-
-def es_solicitud_real(texto):
-    normalizado = " ".join((texto or "").lower().split()).strip(" .,;:!¡")
-    return bool(normalizado) and normalizado not in SIN_SOLICITUD
 
 
 def get_configuracion():

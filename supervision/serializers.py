@@ -1,6 +1,7 @@
 # supervision/serializers.py
 from rest_framework import serializers
 from .models import ConfiguracionResumenSolicitudes, Supervision, FotoSupervision
+from .texto_solicitud import es_solicitud_real
 from cargo_fijo.models import EstadoCargoFijo
 from documentacion.models import EstadoDocumentacion
 
@@ -14,6 +15,10 @@ class FotoSupervisionSerializer(serializers.ModelSerializer):
 
 class SupervisionSerializer(serializers.ModelSerializer):
     fotos = FotoSupervisionSerializer(many=True, read_only=True)
+    tiene_solicitud = serializers.SerializerMethodField()
+
+    def get_tiene_solicitud(self, obj):
+        return es_solicitud_real(obj.solicitudes)
 
     class Meta:
         model = Supervision
@@ -66,6 +71,7 @@ class SupervisionDetailSerializer(serializers.ModelSerializer):
     instalacion_direccion = serializers.CharField(source='instalacion.direccion')
     instalacion_comuna = serializers.CharField(source='instalacion.comuna')
     supervisor_nombre = serializers.SerializerMethodField()
+    tiene_solicitud = serializers.SerializerMethodField()
 
     estado_cargos_fijos = EstadoCargoFijoSerializer(many=True, read_only=True)
     estado_documentos = EstadoDocumentacionSerializer(many=True, read_only=True)
@@ -86,6 +92,7 @@ class SupervisionDetailSerializer(serializers.ModelSerializer):
             'hora_final',
             'novedades',
             'solicitudes',
+            'tiene_solicitud',
             'estado_cargos_fijos',
             'estado_documentos',
             'fotos',
@@ -95,6 +102,9 @@ class SupervisionDetailSerializer(serializers.ModelSerializer):
 
     def get_supervisor_nombre(self, obj):
         return f"{obj.supervisor.nombres} {obj.supervisor.apellidos}" if obj.supervisor else None
+
+    def get_tiene_solicitud(self, obj):
+        return es_solicitud_real(obj.solicitudes)
 
 
 class ConfiguracionResumenSolicitudesSerializer(serializers.ModelSerializer):

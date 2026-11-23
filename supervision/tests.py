@@ -315,11 +315,31 @@ class CorreccionesResumenSolicitudesTests(TestCase):
         self.assertEqual(valores[ids[2]], nueva)
 
     def test_ignora_textos_sin_solicitud(self):
-        from supervision.resumen_solicitudes import es_solicitud_real
+        from supervision.texto_solicitud import es_solicitud_real
 
-        for texto in ("Ninguna", " ninguna. ", "NO", "Sin solicitudes", "n/a", ""):
+        for texto in (
+            "Ninguna", " ninguna. ", "NO", "Sin solicitudes", "n/a", "", None, "No hay solicitudes",
+            "Sin solicitud", "No hay solicitudes.", "SIN SOLICITUDES PENDIENTES", "no aplica", "Sin novedad",
+            "No hay requerimientos", "Sin observaciones", "-",
+        ):
             self.assertFalse(es_solicitud_real(texto), texto)
-        self.assertTrue(es_solicitud_real("Ninguna\n\nFalta documentación de José"))
+        for texto in (
+            "Ninguna\n\nFalta documentación de José", "No hay linterna", "Falta solicitud de vacaciones",
+            "No funciona el portón", "Se requiere pantalón",
+        ):
+            self.assertTrue(es_solicitud_real(texto), texto)
+
+    def test_api_indica_si_tiene_solicitud(self):
+        from rest_framework.test import APIClient
+        from supervision.models import Supervision
+
+        Supervision.objects.create(instalacion=self.instalacion, supervisor=self.usuario, fecha=date(2026, 11, 4),
+                                   hora_inicio=time(8), hora_final=time(9), solicitudes="No hay solicitudes")
+        client = APIClient()
+        client.force_authenticate(self.usuario)
+        data = client.get("/api/supervision/detalle-supervisiones/?mes=11&anio=2026").json()
+        items = data["results"] if isinstance(data, dict) else data
+        self.assertEqual([item["tiene_solicitud"] for item in items], [False])
 
     def test_supervisor_es_el_usuario_autenticado(self):
         from django.contrib.auth import get_user_model

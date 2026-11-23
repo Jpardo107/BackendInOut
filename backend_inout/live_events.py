@@ -5,6 +5,8 @@ from channels.layers import get_channel_layer
 from django.db import transaction
 from django.utils import timezone
 
+from supervision.texto_solicitud import es_solicitud_real
+
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +90,7 @@ def supervision_summary(supervision):
         "estado_solicitud": supervision.estado_solicitud,
         "novedades": (supervision.novedades or "Sin novedades")[:300],
         "solicitudes": (supervision.solicitudes or "Sin solicitudes")[:300],
+        "tiene_solicitud": es_solicitud_real(supervision.solicitudes),
     }
 
 
