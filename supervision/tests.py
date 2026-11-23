@@ -121,3 +121,71 @@ class SupervisionStartTests(TestCase):
         delete_response = self.client.delete("/api/supervision/supervisiones/activa/")
         self.assertEqual(delete_response.status_code, 204)
         self.assertFalse(SupervisionActiva.objects.filter(supervisor=self.supervisor).exists())
+
+
+class FotoSupervisionUploadTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from rest_framework.test import APIClient
+
+        self.user = get_user_model().objects.create_user(username="sup-fotos", password="x")
+        self.client = APIClient()
+
+    def test_requiere_autenticacion(self):
+        response = self.client.post("/api/supervision/fotos/upload/", {}, format="multipart")
+        self.assertIn(response.status_code, (401, 403))
+
+    def test_sube_y_sirve_foto(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        self.client.force_authenticate(self.user)
+        with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=Path(media_root)), patch("supervision.storage._r2_enabled", return_value=False):
+            foto = SimpleUploadedFile("foto.jpg", b"\xff\xd8\xff\xe0contenido", content_type="image/jpeg")
+            response = self.client.post("/api/supervision/fotos/upload/", {"files[]": [foto]}, format="multipart")
+            self.assertEqual(response.status_code, 201, response.content)
+            item = response.json()["files"][0]
+            self.assertTrue(item["url"].endswith(item["key"]))
+            self.assertTrue(item["key"].startswith("supervision/fotos/"))
+
+            self.client.force_authenticate(None)
+            public = self.client.get(f"/api/supervision/fotos/media/{item['key']}")
+            self.assertEqual(public.status_code, 200)
+            self.assertEqual(b"".join(public.streaming_content), b"\xff\xd8\xff\xe0contenido")
+            self.assertEqual(self.client.get("/api/supervision/fotos/media/vivadent/images/x.jpg").status_code, 404)
+
+    def test_rechaza_extension_no_permitida(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.force_authenticate(self.user)
+        archivo = SimpleUploadedFile("script.php", b"<?php", content_type="application/x-php")
+        response = self.client.post("/api/supervision/fotos/upload/", {"files[]": [archivo]}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+
+
+class MigrarFotosCpanelTests(TestCase):
+    def test_copia_en_ruta_predecible_sin_tocar_la_bd(self):
+        from io import StringIO
+        from unittest.mock import MagicMock, patch
+        from django.core.management import call_command
+        from instalacion.models import Instalacion
+        from supervision.models import FotoSupervision, Supervision
+
+        foto = FotoSupervision.objects.create(
+            supervision=Supervision.objects.create(instalacion=Instalacion.objects.create(nombre="X"), fecha=date(2026, 11, 1), hora_inicio=time(9), hora_final=time(10)),
+            url_imagen="https://inout.jaimepardo.cl/uploads/foto%201.jpg",
+        )
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = b"img"
+        response.headers.get_content_type.return_value = "image/jpeg"
+        with patch("supervision.management.commands.migrar_fotos_supervision.urlopen", return_value=response), patch(
+            "supervision.management.commands.migrar_fotos_supervision.save_supervision_photo"
+        ) as save:
+            call_command("migrar_fotos_supervision", stdout=StringIO())
+        self.assertEqual(save.call_args.kwargs["key"], "supervision/fotos/cpanel/uploads/foto 1.jpg")
+        foto.refresh_from_db()
+        self.assertEqual(foto.url_imagen, "https://inout.jaimepardo.cl/uploads/foto%201.jpg")

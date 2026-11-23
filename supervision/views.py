@@ -1,4 +1,7 @@
-from rest_framework import viewsets, status
+from django.urls import reverse
+from rest_framework import permissions, viewsets, status
+from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -14,6 +17,8 @@ from backend_inout.live_events import (
 from instalacion.models import Instalacion
 from .models import Supervision, FotoSupervision, SupervisionActiva
 from .serializers import SupervisionSerializer, SupervisionDetailSerializer, FotoSupervisionSerializer
+from .storage import photo_response, save_supervision_photo
+from reportes.views import _prepare_image_for_storage, _validate_images
 
 
 def get_mes_anio_from_request(request):
@@ -228,3 +233,35 @@ class SupervisionDetailViewSet(viewsets.ReadOnlyModelViewSet):
 class FotoSupervisionViewSet(viewsets.ModelViewSet):
     queryset = FotoSupervision.objects.all()
     serializer_class = FotoSupervisionSerializer
+
+
+class FotoSupervisionUploadView(APIView):
+    """Reemplaza al upload_photo.php del cPanel: recibe files[] y devuelve las URLs públicas."""
+    parser_classes = [MultiPartParser, FormParser]
+    permission_classes = [permissions.IsAuthenticated]
+    max_files = 20
+
+    def post(self, request):
+        files = request.FILES.getlist("files[]") or request.FILES.getlist("files")
+        if not files:
+            raise ValidationError({"detail": "Debes adjuntar al menos una foto."})
+        if len(files) > self.max_files:
+            raise ValidationError({"detail": f"Máximo {self.max_files} fotos por envío."})
+        _validate_images(files)
+
+        uploaded = []
+        for file in files:
+            prepared, name, content_type = _prepare_image_for_storage(file)
+            key = save_supervision_photo(prepared, name, content_type)
+            url = request.build_absolute_uri(reverse("supervision-foto-publica", kwargs={"key": key}))
+            uploaded.append({"ruta": url, "url": url, "key": key})
+        return Response({"files": uploaded}, status=status.HTTP_201_CREATED)
+
+
+class FotoSupervisionPublicView(APIView):
+    """Sirve las fotos sin token para que funcionen en <img src>. Las keys son UUID no adivinables."""
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request, key):
+        return photo_response(key)
